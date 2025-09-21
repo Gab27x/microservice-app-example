@@ -45,15 +45,13 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
+    container:
+      image: node:12-buster
     defaults: { run: { working-directory: frontend } }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "12" }
-      - uses: actions/setup-python@v5
-        with: { python-version: "2.7" }
-      - run: echo "Using $(python -V) at $(which python)"
-      - run: npm config set python "$(which python)"
+      - run: apt-get update && apt-get install -y python2 make g++
+      - run: npm config set python /usr/bin/python2
       - run: npm install
       - run: npm run build
 
