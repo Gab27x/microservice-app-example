@@ -65,10 +65,16 @@ func main() {
 	// Expose breaker status for debugging and compatibility paths
 	breakerHandler := func(c echo.Context) error {
 		state, counts := breakerClient.Status()
-		return c.JSON(200, map[string]interface{}{
+		resp := map[string]interface{}{
 			"state":  state.String(),
 			"counts": counts,
-		})
+		}
+		// include local stable counters when available
+		type localCounter interface{ LocalCounts() map[string]uint64 }
+		if lc, ok := breakerClient.(localCounter); ok {
+			resp["local_counts"] = lc.LocalCounts()
+		}
+		return c.JSON(200, resp)
 	}
 
 	e.GET("/debug/breaker", breakerHandler)

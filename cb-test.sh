@@ -17,8 +17,10 @@ AUTH_DEP_CONTAINER="${AUTH_DEP_CONTAINER:-users-api}"
 TODOS_DEP_CONTAINER="${TODOS_DEP_CONTAINER:-redis-todo}"
 
 # Umbrales/tiempos
-REQUESTS_TO_TRIP="${REQUESTS_TO_TRIP:-8}"   # envía más que tu umbral (p.ej. 5)
-RESET_TIMEOUT_SEC="${RESET_TIMEOUT_SEC:-15}" # igual a tu open/reset timeout
+# Número de requests que enviará el script durante el "flood" para provocar fallos
+REQUESTS_TO_TRIP="${REQUESTS_TO_TRIP:-20}"   # aumenta para asegurar tripping
+# Tiempo que espera antes de intentar recuperación (coincide con el timeout del breaker)
+RESET_TIMEOUT_SEC="${RESET_TIMEOUT_SEC:-15}" # segundos
 
 # Endpoint de login (ajústalo si tu ruta real es otra)
 LOGIN_PATH="${LOGIN_PATH:-/login}"
@@ -70,11 +72,29 @@ flood_logins() {
   local base="$1"; shift
   local n="${1:-8}"
   local url="${base}${LOGIN_PATH}"
+  # enviar peticiones en paralelo para forzar errores rápidamente
   for i in $(seq 1 "$n"); do
-    curl -s -X POST "$url" -H 'Content-Type: application/json' -d "$LOGIN_BODY" >/dev/null || true
-    printf "."
+    (curl -s -X POST "$url" -H 'Content-Type: application/json' -d "$LOGIN_BODY" >/dev/null 2>&1 || true) &
   done
+  wait
   echo
+}
+
+# Espera hasta que el endpoint del breaker alcance el estado deseado.
+# Uso: wait_for_state <url> <state> [timeout_seconds]
+wait_for_state() {
+  local url="$1"; local target="$2"; local timeout="${3:-15}"
+  local waited=0
+  while [ $waited -lt $timeout ]; do
+    local body; body="$(curl -fs "$url" 2>/dev/null || true)"
+    local state; state="$(printf "%s" "$body" | extract_state)"
+    if [ "$state" = "$target" ]; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited+1))
+  done
+  return 1
 }
 
 # Lee y muestra estado+JSON crudo
@@ -117,19 +137,63 @@ show_state "$AUTH_CB_URL"
 # Base de auth (para logins)
 AUTH_BASE="$(printf "%s" "$AUTH_CB_URL" | sed -E 's#(http://[^/]+).*#\1#')"
 
+
 # ===== Escenario B: abrir breaker (apagar dependencia) =====
 echo "== Escenario B: abrir breaker en auth-api =="
+say "Parando dependencia $AUTH_DEP_CONTAINER para forzar errores..."
 docker stop "$AUTH_DEP_CONTAINER" >/dev/null 2>&1 || true
+sleep 1
+say "Inundando $REQUESTS_TO_TRIP requests de login para provocar fallos..."
 flood_logins "$AUTH_BASE" "$REQUESTS_TO_TRIP"
+say "Comprobando si el breaker pasó a 'open' (esperando hasta 15s)..."
+if wait_for_state "$AUTH_CB_URL" "open" 15; then
+  say "-> El breaker está OPEN"
+else
+  say "-> No detecté OPEN en el timeout; mostrando estado actual"
+fi
 show_state "$AUTH_CB_URL"
 
 # ===== Escenario C: recuperación =====
 echo "== Escenario C: recuperación auth-api =="
+say "Arrancando dependencia $AUTH_DEP_CONTAINER..."
 docker start "$AUTH_DEP_CONTAINER" >/dev/null 2>&1 || true
-echo "Esperando ${RESET_TIMEOUT_SEC}s (open/reset timeout)..."
+say "Esperando ${RESET_TIMEOUT_SEC}s (open/reset timeout) para entrar en half-open..."
 sleep "$RESET_TIMEOUT_SEC"
-# dispara 1-2 req para cerrar half-open
-flood_logins "$AUTH_BASE" 2
+say "Buscando estado 'half-open' durante ${RESET_TIMEOUT_SEC}s..."
+if wait_for_state "$AUTH_CB_URL" "half-open" "$RESET_TIMEOUT_SEC"; then
+  say "-> half-open detectado: esperando a que users-api esté listo y envío 3 requests de prueba"
+  # esperar hasta que users-api responda en el puerto 8083
+  wait_for_service() {
+    local host=${1:-localhost}
+    local port=${2:-8083}
+    local timeout=${3:-30}
+    local waited=0
+    while [ $waited -lt $timeout ]; do
+      if curl -fs "http://${host}:${port}/" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 1
+      waited=$((waited+1))
+    done
+    return 1
+  }
+
+  if wait_for_service "localhost" 8083 30; then
+    say "users-api listo — enviando 3 peticiones de prueba hacia auth-api/login"
+    flood_logins "$AUTH_BASE" 3
+  else
+    say "Warning: users-api no respondió en 30s; las peticiones de prueba pueden fallar"
+    flood_logins "$AUTH_BASE" 3
+  fi
+  say "Esperando a que el breaker cierre (closed) durante ${RESET_TIMEOUT_SEC}s..."
+  if wait_for_state "$AUTH_CB_URL" "closed" "$RESET_TIMEOUT_SEC"; then
+    say "-> recovery exitoso: breaker CLOSED"
+  else
+    say "-> No se detectó CLOSED después de pruebas; mostrar estado actual"
+  fi
+else
+  say "-> No se detectó half-open (quizá el breaker cerró directamente o no hubo timeout)."
+fi
 show_state "$AUTH_CB_URL"
 
 # ===== Escenario D (opcional): todos-api/Redis =====
