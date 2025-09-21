@@ -11,6 +11,10 @@ on:
       - "feature/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-auth-api:
     runs-on: ubuntu-latest
@@ -67,50 +71,79 @@ jobs:
 
   docker:
     needs:
-      [
-        build-auth-api,
-        build-users-api,
-        build-todos-api,
-        build-frontend,
-        build-log-processor,
-      ]
+      - build-auth-api
+      - build-users-api
+      - build-todos-api
+      - build-frontend
+      - build-log-processor
     if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feature/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.REGISTRY_USER }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Compute tag
         id: vars
-        run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-      - name: Build & push
         run: |
-          docker build -t ghcr.io/<org>/auth-api:${{ steps.vars.outputs.TAG }} ./auth-api
-          docker build -t ghcr.io/<org>/users-api:${{ steps.vars.outputs.TAG }} ./users-api
-          docker build -t ghcr.io/<org>/todos-api:${{ steps.vars.outputs.TAG }} ./todos-api
-          docker build -t ghcr.io/<org>/frontend:${{ steps.vars.outputs.TAG }} ./frontend
-          docker build -t ghcr.io/<org>/log-processor:${{ steps.vars.outputs.TAG }} ./log-message-processor
-          docker push ghcr.io/<org>/auth-api:${{ steps.vars.outputs.TAG }}
-          docker push ghcr.io/<org>/users-api:${{ steps.vars.outputs.TAG }}
-          docker push ghcr.io/<org>/todos-api:${{ steps.vars.outputs.TAG }}
-          docker push ghcr.io/<org>/frontend:${{ steps.vars.outputs.TAG }}
-          docker push ghcr.io/<org>/log-processor:${{ steps.vars.outputs.TAG }}
+          BRANCH=${GITHUB_REF_NAME//\//-}
+          echo "TAG=${BRANCH}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build & push images
+        run: |
+          OWNER=${GITHUB_REPOSITORY_OWNER,,}
+          TAG='${{ steps.vars.outputs.TAG }}'
+          docker build -t ghcr.io/$OWNER/auth-api:$TAG ./auth-api
+          docker build -t ghcr.io/$OWNER/users-api:$TAG ./users-api
+          docker build -t ghcr.io/$OWNER/todos-api:$TAG ./todos-api
+          docker build -t ghcr.io/$OWNER/frontend:$TAG ./frontend
+          docker build -t ghcr.io/$OWNER/log-processor:$TAG ./log-message-processor
+          docker push ghcr.io/$OWNER/auth-api:$TAG
+          docker push ghcr.io/$OWNER/users-api:$TAG
+          docker push ghcr.io/$OWNER/todos-api:$TAG
+          docker push ghcr.io/$OWNER/frontend:$TAG
+          docker push ghcr.io/$OWNER/log-processor:$TAG
 
   integration:
     needs: docker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose up -d --build
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # Opcional: exportar las imágenes desde GHCR al compose por tag
+      # - name: Login to GHCR (pull)
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose up
+        run: |
+          docker compose up -d --build
+          # Espera activa hasta que /login responda 200
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:8000/login && break
+            echo "Esperando auth-api... ($i)"
+            sleep 2
+          done
+
       - name: Smoke Test
         run: |
           TOKEN=$(curl -s -X POST http://localhost:8000/login \
             -H "Content-Type: application/json" \
             -d '{"username":"admin","password":"admin"}' | jq -r .accessToken)
+          echo "TOKEN=${TOKEN:0:10}..."
           curl -s -H "Authorization: Bearer $TOKEN" -X POST \
-            http://localhost:8082/todos -d '{"content":"demo"}'
+            http://localhost:8082/todos -H "Content-Type: application/json" \
+            -d '{"content":"demo"}'
           curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/todos
