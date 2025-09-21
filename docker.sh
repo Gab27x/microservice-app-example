@@ -49,6 +49,12 @@ Construcción avanzada de imágenes (sin docker compose):
     Construye imágenes docker por servicio con nombre microservices-<servicio>:<tag>
   images
     Lista las imágenes construidas (prefijo microservices-)
+  install-alias
+    Instala el alias persistente 'ms' sin ejecutar ninguna otra acción
+  alias-activate
+    Imprime el alias para activarlo en la sesión actual (usar con eval)
+  bootstrap-alias
+    Instala el alias y emite el alias listo para eval en esta sesión
 
 Atajos/Alias:
   Acciones: u=up, b=build, bi=build-images, i=images, s=stop, d=down,
@@ -76,6 +82,10 @@ Notas:
       bash docker.sh u
       bash docker.sh l -f todos
       bash docker.sh bi --service auth --tag v2 --no-cache
+      # Activar alias en la sesión actual (sin abrir nueva terminal)
+      eval "$(bash docker.sh alias-activate)"
+      # Instalar y activar en un solo paso
+      eval "$(bash docker.sh bootstrap-alias)"
 EOF
 }
 
@@ -86,13 +96,13 @@ shift || true
 EXTRA_ARGS=("$@")
 
 # Alias de acciones y servicios
-declare -A ACTION_ALIASES=([
-  u]=up [b]=build [bi]=build-images [i]=images [s]=stop [d]=down [r]=restart [l]=logs [p]=ps [c]=clean [cr]=create [h]=help
+declare -A ACTION_ALIASES=(
+  [u]=up [b]=build [bi]=build-images [i]=images [s]=stop [d]=down [r]=restart [l]=logs [p]=ps [c]=clean [cr]=create [h]=help
 )
 
 # Alias de servicios para docker compose (nombres tal como en docker-compose.yml)
-declare -A COMPOSE_SERVICE_ALIASES=([
-  users]=users-api [user]=users-api [ua]=users-api [usersapi]=users-api
+declare -A COMPOSE_SERVICE_ALIASES=(
+  [users]=users-api [user]=users-api [ua]=users-api [usersapi]=users-api
   [auth]=auth-api [a]=auth-api [authapi]=auth-api
   [todos]=todos-api [todo]=todos-api [t]=todos-api [todosapi]=todos-api
   [lp]=log-message-processor [log]=log-message-processor [logproc]=log-message-processor [log-processor]=log-message-processor [log-message]=log-message-processor
@@ -100,8 +110,8 @@ declare -A COMPOSE_SERVICE_ALIASES=([
 )
 
 # Alias de servicios para build-images (claves esperadas por SERVICE_TO_CONTEXT)
-declare -A IMAGE_SERVICE_ALIASES=([
-  users]=users-api [user]=users-api [ua]=users-api [usersapi]=users-api
+declare -A IMAGE_SERVICE_ALIASES=(
+  [users]=users-api [user]=users-api [ua]=users-api [usersapi]=users-api
   [auth]=auth-api [a]=auth-api [authapi]=auth-api
   [todos]=todos-api [todo]=todos-api [t]=todos-api [todosapi]=todos-api
   [lp]=log-processor [log]=log-processor [logproc]=log-processor [log-processor]=log-processor [log-message]=log-processor [log-message-processor]=log-processor
@@ -156,15 +166,35 @@ ensure_persistent_alias() {
   local script_path
   script_path="${SCRIPT_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
 
-  # Detectar archivo de perfil según shell
+  # Detectar archivo de perfil según shell (manejo de Git Bash)
   local shell_name
   shell_name="$(basename -- "${SHELL:-bash}")"
   local profile_file
+  local bash_rc="${HOME}/.bashrc"
+  local bash_profile="${HOME}/.bash_profile"
+  local is_git_bash="false"
+  if [[ "${MSYSTEM:-}" != "" ]] || uname -s 2>/dev/null | grep -qi "mingw\|msys\|cygwin"; then
+    is_git_bash="true"
+  fi
   case "$shell_name" in
     zsh)
       profile_file="${HOME}/.zshrc" ;;
     bash|sh|*)
-      profile_file="${HOME}/.bashrc" ;;
+      if [[ "$is_git_bash" == "true" ]]; then
+        profile_file="$bash_rc"
+        # Asegurar que ~/.bash_profile cargue ~/.bashrc
+        [[ -f "$bash_profile" ]] || touch "$bash_profile" 2>/dev/null || true
+        if ! grep -q "^[[:space:]]*\.\s*\$HOME/\.bashrc\>" "$bash_profile" 2>/dev/null \
+           && ! grep -q "^[[:space:]]*source\s*\$HOME/\.bashrc\>" "$bash_profile" 2>/dev/null; then
+          {
+            echo "" ;
+            echo "# Cargar alias desde ~/.bashrc (agregado automáticamente)" ;
+            echo ". \"$bash_rc\"" ;
+          } >> "$bash_profile" 2>/dev/null || true
+        fi
+      else
+        profile_file="$bash_rc"
+      fi ;;
   esac
 
   if [[ ! -f "${profile_file}" ]]; then
@@ -186,6 +216,18 @@ ensure_persistent_alias() {
 
   echo "⚙️  Alias persistente instalado: ${alias_name} -> ${script_path}"
   echo "➡️  Abre una nueva terminal o ejecuta: source \"${profile_file}\""
+}
+
+alias_activate_output() {
+  local alias_name="ms"
+  local script_path
+  script_path="${SCRIPT_DIR}/$(basename -- "${BASH_SOURCE[0]}")"
+  echo "alias ${alias_name}='bash \"${script_path}\"'"
+}
+
+bootstrap_alias() {
+  ensure_persistent_alias || true
+  alias_activate_output
 }
 
 list_built_images() {
@@ -321,6 +363,15 @@ case "${ACTION}" in
     ;;
   build-images)
     build_images_action
+    ;;
+  install-alias)
+    ensure_persistent_alias
+    ;;
+  alias-activate)
+    alias_activate_output
+    ;;
+  bootstrap-alias)
+    bootstrap_alias
     ;;
   up)
     # --build por conveniencia para construir si hay cambios
