@@ -49,14 +49,11 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
-    container:
-      image: node:12-bullseye
+    container: { image: node:8 }
     defaults: { run: { working-directory: frontend } }
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y python2 make g++
-      - run: npm config set python /usr/bin/python2
-      - run: npm ci || npm install
+      - run: npm install
       - run: npm run build
 
   build-log-processor:
