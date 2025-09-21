@@ -8,7 +8,7 @@ on:
     branches:
       - develop
       - main
-      - "feature/**" # <-- push a cualquier rama que empiece por feature/
+      - "feature/**"
   workflow_dispatch:
 
 jobs:
@@ -49,7 +49,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "18" }
+        with: { node-version: "12" }
+      - run: sudo apt-get update && sudo apt-get install -y python2
+      - run: npm config set python python2
       - run: npm install
       - run: npm run build
 
