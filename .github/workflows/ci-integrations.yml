@@ -49,12 +49,14 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
-    container: { image: node:8 }
     defaults: { run: { working-directory: frontend } }
     steps:
       - uses: actions/checkout@v4
-      - run: npm install
-      - run: npm run build
+      - name: Build frontend in Node 8 container
+        run: |
+          docker run --rm \
+            -v "$PWD":/app -w /app \
+            node:8 bash -lc "npm install && npm run build"
 
   build-log-processor:
     runs-on: ubuntu-latest
