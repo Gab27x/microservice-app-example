@@ -1,21 +1,21 @@
-FROM node:8.17.0
+# Etapa 1: construir la app con Node 8
+FROM node:8.17.0 AS build
 WORKDIR /app
 
-# Variables de entorno para que Vue dev-server las use
-ENV HOST=0.0.0.0
-ENV PORT=3000
-ENV AUTH_API_ADDRESS=http://auth-api:8080
-ENV TODOS_API_ADDRESS=http://todos-api:8082
-ENV ZIPKIN_URL=http://zipkin:9411/api/v2/spans
-
-# Instalar dependencias
 COPY package*.json ./
 RUN npm install
 
-# Copiar el resto del código
 COPY . .
+RUN npm run build
+
+# Etapa 2: servir con Nginx
+FROM nginx:alpine
+
+# Copiar el build generado
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copiar la configuración de Nginx
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 3000
-
-# Iniciar el servidor respetando las variables
-CMD ["npm", "start"]
+CMD ["nginx", "-g", "daemon off;"]

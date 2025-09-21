@@ -2,9 +2,6 @@ import time
 import redis
 import os
 import json
-import requests
-from py_zipkin.zipkin import zipkin_span, ZipkinAttrs, generate_random_64bit_string
-import time
 import random
 
 def log_message(message):
@@ -13,49 +10,29 @@ def log_message(message):
     print('message received after waiting for {}ms: {}'.format(time_delay, message))
 
 if __name__ == '__main__':
-    redis_host = os.environ['REDIS_HOST']
-    redis_port = int(os.environ['REDIS_PORT'])
-    redis_channel = os.environ['REDIS_CHANNEL']
-    zipkin_url = os.environ['ZIPKIN_URL'] if 'ZIPKIN_URL' in os.environ else ''
-    def http_transport(encoded_span):
-        requests.post(
-            zipkin_url,
-            data=encoded_span,
-            headers={'Content-Type': 'application/x-thrift'},
-        )
-
-    pubsub = redis.Redis(host=redis_host, port=redis_port, db=0).pubsub()
-    pubsub.subscribe([redis_channel])
-    for item in pubsub.listen():
-        try:
-            message = json.loads(str(item['data'].decode("utf-8")))
-        except Exception as e:
-            log_message(e)
-            continue
-
-        if not zipkin_url or 'zipkinSpan' not in message:
-            log_message(message)
-            continue
-
-        span_data = message['zipkinSpan']
-        try:
-            with zipkin_span(
-                service_name='log-message-processor',
-                zipkin_attrs=ZipkinAttrs(
-                    trace_id=span_data['_traceId']['value'],
-                    span_id=generate_random_64bit_string(),
-                    parent_span_id=span_data['_spanId'],
-                    is_sampled=span_data['_sampled']['value'],
-                    flags=None
-                ),
-                span_name='save_log',
-                transport_handler=http_transport,
-                sample_rate=100
-            ):
-                log_message(message)
-        except Exception as e:
-            print('did not send data to Zipkin: {}'.format(e))
-            log_message(message)
+    redis_host = os.environ.get('REDIS_HOST', 'redis-todo')
+    redis_port = int(os.environ.get('REDIS_PORT', 6379))
+    redis_channel = os.environ.get('REDIS_CHANNEL', 'log_channel')
+    zipkin_url = os.environ.get('ZIPKIN_URL', 'http://zipkin:9411/api/v2/spans')
+    
+    print(f'Connecting to Redis at {redis_host}:{redis_port}')
+    print(f'Subscribing to channel: {redis_channel}')
+    
+    try:
+        pubsub = redis.Redis(host=redis_host, port=redis_port, db=0).pubsub()
+        pubsub.subscribe([redis_channel])
+        
+        print('Waiting for messages...')
+        for item in pubsub.listen():
+            if item['type'] == 'message':
+                try:
+                    message = json.loads(str(item['data'].decode("utf-8")))
+                    log_message(message)
+                except Exception as e:
+                    print(f'Error processing message: {e}')
+                    continue
+    except Exception as e:
+        print(f'Error connecting to Redis: {e}')
 
 
 
