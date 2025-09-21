@@ -15,7 +15,7 @@ COPY . .
 
 # Variables de entorno (se pueden sobreescribir en docker-compose o docker run -e)
 ENV TODO_API_PORT=8082 \
-    JWT_SECRET=PRFT \
+    JWT_SECRET=myfancysecret \
     REDIS_HOST=redis \
     REDIS_PORT=6379 \
     REDIS_CHANNEL=todos-log \
