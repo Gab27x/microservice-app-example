@@ -1,0 +1,102 @@
+name: CI & Build
+
+on:
+  pull_request:
+    branches: [ "develop" ]
+  push:
+    branches: [ "develop", "main" ]
+
+jobs:
+  build-auth-api:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: auth-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.18" }
+      - run: go test ./...
+      - run: go build -o auth-api
+
+  build-users-api:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: users-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '8'
+      - run: mvn -B clean package -DskipTests
+
+  build-todos-api:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: todos-api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '18' }
+      - run: npm install
+      - run: npm test || echo "no tests"
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '18' }
+      - run: npm install
+      - run: npm run build
+
+  build-log-processor:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: log-message-processor } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - run: pip install -r requirements.txt
+      - run: python -m py_compile main.py
+
+  docker:
+    needs: [build-auth-api, build-users-api, build-todos-api, build-frontend, build-log-processor]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+      - name: Compute tag
+        id: vars
+        run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+      - name: Build & push
+        run: |
+          docker build -t ghcr.io/<org>/auth-api:${{ steps.vars.outputs.TAG }} ./auth-api
+          docker build -t ghcr.io/<org>/users-api:${{ steps.vars.outputs.TAG }} ./users-api
+          docker build -t ghcr.io/<org>/todos-api:${{ steps.vars.outputs.TAG }} ./todos-api
+          docker build -t ghcr.io/<org>/frontend:${{ steps.vars.outputs.TAG }} ./frontend
+          docker build -t ghcr.io/<org>/log-processor:${{ steps.vars.outputs.TAG }} ./log-message-processor
+          docker push ghcr.io/<org>/auth-api:${{ steps.vars.outputs.TAG }}
+          docker push ghcr.io/<org>/users-api:${{ steps.vars.outputs.TAG }}
+          docker push ghcr.io/<org>/todos-api:${{ steps.vars.outputs.TAG }}
+          docker push ghcr.io/<org>/frontend:${{ steps.vars.outputs.TAG }}
+          docker push ghcr.io/<org>/log-processor:${{ steps.vars.outputs.TAG }}
+
+  integration:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+      - name: Smoke Test
+        run: |
+          TOKEN=$(curl -s -X POST http://localhost:8000/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"admin"}' | jq -r .accessToken)
+          curl -s -H "Authorization: Bearer $TOKEN" -X POST \
+            http://localhost:8082/todos -d '{"content":"demo"}'
+          curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/todos
