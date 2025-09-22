@@ -52,14 +52,19 @@ func TestRetry_SucceedsAfter500(t *testing.T) {
 }
 
 func TestRetry_NonIdempotentNotRetried(t *testing.T) {
+    // For non-idempotent methods, retry wrapper should not retry and should
+    // return the underlying response as-is (HTTP 500 with no error at this layer).
     fc := &fakeClient{seq: []fakeResp{
         {resp: &http.Response{StatusCode: 500, Body: http.NoBody}},
     }}
     rc := newRetryHTTPClient(fc, RetryConfig{MaxRetries: 3, BaseDelay: 1 * time.Millisecond, MaxDelay: 2 * time.Millisecond})
     req, _ := http.NewRequest(http.MethodPost, "http://example.com", nil)
     resp, err := rc.Do(req)
-    if err == nil {
-        t.Fatalf("expected error for POST 500, got success %v", resp)
+    if err != nil {
+        t.Fatalf("did not expect error for POST passthrough, got %v", err)
+    }
+    if resp.StatusCode != 500 {
+        t.Fatalf("expected status 500 passthrough, got %d", resp.StatusCode)
     }
     if fc.calls != 1 {
         t.Fatalf("expected 1 call (no retry), got %d", fc.calls)
