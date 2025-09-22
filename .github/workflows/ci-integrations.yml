@@ -102,12 +102,12 @@ jobs:
           docker build -t ghcr.io/$OWNER/users-api:$TAG ./users-api
           docker build -t ghcr.io/$OWNER/todos-api:$TAG ./todos-api
           docker build -t ghcr.io/$OWNER/frontend:$TAG ./frontend
-          docker build -t ghcr.io/$OWNER/log-processor:$TAG ./log-message-processor
+          docker build -t ghcr.io/$OWNER/log-message-processor:$TAG ./log-message-processor
           docker push ghcr.io/$OWNER/auth-api:$TAG
           docker push ghcr.io/$OWNER/users-api:$TAG
           docker push ghcr.io/$OWNER/todos-api:$TAG
           docker push ghcr.io/$OWNER/frontend:$TAG
-          docker push ghcr.io/$OWNER/log-processor:$TAG
+          docker push ghcr.io/$OWNER/log-message-processor:$TAG
 
   integration:
     needs: docker
@@ -133,6 +133,18 @@ jobs:
           for i in {1..30}; do
             curl -sf -o /dev/null http://localhost:8000/login && break
             echo "Esperando auth-api... ($i)"
+            sleep 2
+          done
+          # Espera activa a Zipkin (puerto 9411)
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:9411/ && break
+            echo "Esperando zipkin... ($i)"
+            sleep 2
+          done
+          # Espera activa al log-message-processor inicializado (busca mensaje en logs)
+          for i in {1..30}; do
+            docker compose logs log-message-processor 2>/dev/null | grep -q "Waiting for messages" && break || true
+            echo "Esperando log-message-processor... ($i)"
             sleep 2
           done
 
