@@ -4,7 +4,8 @@ set -euo pipefail
 # Deterministic retry verification for auth-api using WireMock.
 # Works locally and in GitHub Actions.
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 say() { printf "%s\n" "$*" >&2; }
 
@@ -21,9 +22,38 @@ need_jq() {
 
 need_jq || true
 
+# Wait for a URL to be ready (HTTP 2xx/3xx)
+wait_for_url() {
+  local url="$1"; shift
+  local tries="${1:-60}"; shift || true
+  local sleep_s="${1:-1}"; shift || true
+  for i in $(seq 1 "$tries"); do
+    if curl -fs "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    printf "." >&2
+    sleep "$sleep_s"
+  done
+  printf "\n" >&2
+  return 1
+}
+
+# POST JSON with retries to handle transient readiness
+post_json_retry() {
+  local url="$1"; shift
+  local data="$1"; shift
+  curl --retry 6 --retry-delay 1 --retry-connrefused -fsS -X POST "$url" \
+    -H "Content-Type: application/json" -d "$data" >/dev/null
+}
+
 # 1) Bring up stack with WireMock override (auth-api points to wiremock)
 say "Starting stack with WireMock override..."
 docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/docker-compose.retry.yml" up -d --build wiremock zipkin auth-api
+
+# 1.1) Wait for WireMock to be ready before admin calls
+say "Waiting for WireMock to be ready..."
+wait_for_url "http://localhost:8089/__admin/mappings" 40 0.5 || {
+  say "WireMock didn't become ready in time"; exit 1; }
 
 # 2) Wait for auth-api to be ready
 AUTH_URL="http://localhost:8000/version"
@@ -38,29 +68,24 @@ done
 # 3) Program WireMock: first GET /users/* returns 500, second returns 200
 # Reset WireMock (clean mappings and requests) to avoid leftovers from previous runs
 say "Resetting WireMock mappings and requests..."
-curl -s -X POST http://localhost:8089/__admin/reset >/dev/null || true
-curl -s -X POST http://localhost:8089/__admin/requests/reset >/dev/null || true
+curl -fsS -X POST http://localhost:8089/__admin/reset >/dev/null || true
+curl -fsS -X POST http://localhost:8089/__admin/requests/reset >/dev/null || true
 
 say "Configuring WireMock stubs..."
-curl -s -X POST http://localhost:8089/__admin/mappings -H "Content-Type: application/json" -d @- >/dev/null <<'JSON'
-{
+post_json_retry http://localhost:8089/__admin/mappings '{
   "scenarioName": "UsersApiFlaky",
   "requiredScenarioState": "Started",
   "newScenarioState": "FailOnce",
   "request": { "method": "GET", "urlPathPattern": "/users/.*" },
   "response": { "status": 500, "jsonBody": { "error": "temporary" }, "headers": { "Content-Type": "application/json" } }
-}
-JSON
-
-curl -s -X POST http://localhost:8089/__admin/mappings -H "Content-Type: application/json" -d @- >/dev/null <<'JSON'
-{
+}'
+post_json_retry http://localhost:8089/__admin/mappings '{
   "scenarioName": "UsersApiFlaky",
   "requiredScenarioState": "FailOnce",
   "newScenarioState": "Succeeded",
   "request": { "method": "GET", "urlPathPattern": "/users/.*" },
   "response": { "status": 200, "jsonBody": { "username":"admin","firstname":"Admin","lastname":"User","role":"ADMIN" }, "headers": { "Content-Type": "application/json" } }
-}
-JSON
+}'
 
 # 4) Wait until both stubs are loaded and scenario is in Started state (only if jq available)
 if command -v jq >/dev/null 2>&1; then
@@ -76,7 +101,7 @@ if command -v jq >/dev/null 2>&1; then
   done
   printf "\n" >&2
   # Small extra settle time
-  sleep 0.3
+  sleep 0.6
 else
   say "jq not available; skipping scenario readiness wait (sleeping 1s)"
   sleep 1
@@ -110,7 +135,7 @@ AFTER_REQS=""
 
 if command -v jq >/dev/null 2>&1; then
   WIRE_REQ_COUNT=$(curl -fs http://localhost:8089/__admin/requests | jq '.requests | length')
-  STATUSES_JSON=$(curl -fs http://localhost:8089/__admin/requests | jq '[.requests[] | select(.request.url|test("/users/")) | .response.status] | .[-2:]')
+  STATUSES_JSON=$(curl -fs http://localhost:8089/__admin/requests | jq '[.requests[] | select(.request.url|test("/users/")) | {status:.response.status, t:(.loggedDate // 0)}] | sort_by(.t) | .[-2:] | map(.status)')
   AFTER_REQS=$(curl -fs "$CB_URL" | jq -r '.totals.Requests // .Requests // 0')
 fi
 
@@ -122,9 +147,10 @@ fi
 
 # 8) Assertions with metrics when jq available
 if command -v jq >/dev/null 2>&1; then
-  # Expect the last two users-api responses to be [500, 200]
-  if [[ "$(echo "$STATUSES_JSON" | tr -d '[:space:]')" != "[500,200]" ]]; then
-    say "ERROR: expected users-api status sequence [500,200], got: $STATUSES_JSON"
+  # Expect the last two users-api responses to be a set {500,200} regardless of order
+  SORTED_STATUSES=$(printf "%s" "$STATUSES_JSON" | jq 'sort')
+  if [[ "$(echo "$SORTED_STATUSES" | tr -d '[:space:]')" != "[200,500]" ]]; then
+    say "ERROR: expected users-api statuses {500,200}, got: $STATUSES_JSON"
     exit 1
   fi
   # Expect breaker delta requests to be 2

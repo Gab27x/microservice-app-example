@@ -168,5 +168,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run deterministic retry test with WireMock
         run: |
-          chmod +x ./retry-test.sh
-          ./retry-test.sh
+          chmod +x ./scripts/test-retry.sh
+          ./scripts/test-retry.sh

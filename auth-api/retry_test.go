@@ -7,28 +7,7 @@ import (
     "time"
 )
 
-// fakeClient allows scripting a sequence of responses/errors.
-type fakeClient struct{
-    calls int
-    seq   []fakeResp
-}
-
-type fakeResp struct{
-    resp *http.Response
-    err  error
-}
-
-func (f *fakeClient) Do(req *http.Request) (*http.Response, error) {
-    if f.calls >= len(f.seq) {
-        return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
-    }
-    r := f.seq[f.calls]
-    f.calls++
-    if r.resp == nil {
-        return nil, r.err
-    }
-    return r.resp, r.err
-}
+// helpers moved to retry_test_helpers.go
 
 func TestRetry_SucceedsAfter500(t *testing.T) {
     // First 500, then 200
@@ -53,7 +32,6 @@ func TestRetry_SucceedsAfter500(t *testing.T) {
 
 func TestRetry_NonIdempotentNotRetried(t *testing.T) {
     // For non-idempotent methods, retry wrapper should not retry and should
-    // return the underlying response as-is (HTTP 500 with no error at this layer).
     fc := &fakeClient{seq: []fakeResp{
         {resp: &http.Response{StatusCode: 500, Body: http.NoBody}},
     }}
