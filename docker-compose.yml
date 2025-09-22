@@ -54,6 +54,7 @@ services:
       - REDIS_HOST=redis-todo
       - REDIS_PORT=6379
       - REDIS_CHANNEL=log_channel
+      - CACHE_TTL_SECONDS=60
       - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
 
   frontend:
