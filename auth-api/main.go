@@ -64,18 +64,19 @@ func main() {
 
 	// Expose breaker status for debugging and compatibility paths
 	breakerHandler := func(c echo.Context) error {
-		state, counts := breakerClient.Status()
-		resp := map[string]interface{}{
-			"state":  state.String(),
-			"counts": counts,
-		}
-		// include local stable counters when available
-		type localCounter interface{ LocalCounts() map[string]uint64 }
-		if lc, ok := breakerClient.(localCounter); ok {
-			resp["local_counts"] = lc.LocalCounts()
-		}
-		return c.JSON(200, resp)
+		state, gbCounts := breakerClient.Status()
+		local := breakerClient.LocalCounts()
+		code := http.StatusOK
+		if state.String() == "open" { code = http.StatusServiceUnavailable }
+		return c.JSON(code, map[string]any{
+			"service":"auth-api",
+			"state": state.String(),
+			"counts": gbCounts,
+			"totals": local,                 // <- ESTO
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
 	}
+
 
 	e.GET("/debug/breaker", breakerHandler)
 	e.GET("/status/circuit-breaker", breakerHandler)
