@@ -1,8 +1,9 @@
 # Microservice App - PRFT Devops Training
 
-This is the application you are going to use through the whole traninig. This, hopefully, will teach you the fundamentals you need in a real project. You will find a basic TODO application designed with a [microservice architecture](https://microservices.io). Although is a TODO application, it is interesting because the microservices that compose it are written in different programming language or frameworks (Go, Python, Vue, Java, and NodeJS). With this design you will experiment with multiple build tools and environments. 
+This is the application you are going to use through the whole traninig. This, hopefully, will teach you the fundamentals you need in a real project. You will find a basic TODO application designed with a [microservice architecture](https://microservices.io). Although is a TODO application, it is interesting because the microservices that compose it are written in different programming language or frameworks (Go, Python, Vue, Java, and NodeJS). With this design you will experiment with multiple build tools and environments.
 
 ## Components
+
 In each folder you can find a more in-depth explanation of each component:
 
 1. [Users API](/users-api) is a Spring Boot application. Provides user profiles. At the moment, does not provide full CRUD, just getting a single user and all users.
@@ -10,6 +11,10 @@ In each folder you can find a more in-depth explanation of each component:
 3. [TODOs API](/todos-api) is a NodeJS application, provides CRUD functionality over user's TODO records. Also, it logs "create" and "delete" operations to [Redis](https://redis.io/) queue.
 4. [Log Message Processor](/log-message-processor) is a queue processor written in Python. Its purpose is to read messages from a Redis queue and print them to standard output.
 5. [Frontend](/frontend) Vue application, provides UI.
+
+## Cloud design patterns used
+
+- Cache-aside on `todos-api` using Redis: GET `/todos` consulta caché Redis por usuario (`todos:<username>`). En miss, lee del almacén en memoria, responde y coloca en Redis con TTL controlado por `CACHE_TTL_SECONDS`. En mutaciones (POST/DELETE) se invalida la clave para coherencia.
 
 ## Architecture
 
