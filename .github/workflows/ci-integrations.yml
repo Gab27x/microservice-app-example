@@ -158,3 +158,15 @@ jobs:
             http://localhost:8082/todos -H "Content-Type: application/json" \
             -d '{"content":"demo"}'
           curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/todos
+
+  retry-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Run deterministic retry test with WireMock
+        run: |
+          chmod +x ./scripts/test-retry.sh
+          ./scripts/test-retry.sh
