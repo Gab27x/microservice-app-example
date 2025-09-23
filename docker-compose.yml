@@ -56,6 +56,9 @@ services:
       - REDIS_CHANNEL=log_channel
       - CACHE_TTL_SECONDS=60
       - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - RATE_LIMIT_POINTS=100
+      - RATE_LIMIT_DURATION=60
+      - RATE_LIMIT_BLOCK=60
 
   frontend:
     build:
