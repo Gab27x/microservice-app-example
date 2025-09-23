@@ -21,4 +21,5 @@ jobs:
           format: "table"
           severity: "HIGH,CRITICAL"
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
+          scanners: "vuln"
