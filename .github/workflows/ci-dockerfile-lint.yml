@@ -1,0 +1,25 @@
+name: CI - Dockerfile Lint
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: |
+            auth-api/Dockerfile
+            users-api/Dockerfile
+            todos-api/Dockerfile
+            frontend/Dockerfile
+            log-message-processor/Dockerfile
