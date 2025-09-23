@@ -24,9 +24,9 @@ info() { printf "${BLUE}ℹ %s${NC}\n" "$*" >&2; }
 SERVICES=(
     "redis-todo:6379:redis"
     "zipkin:9411:zipkin"
-    "users-api:8083:http"
+    "users-api:8083:docker"
     "auth-api:8000:http"
-    "todos-api:8082:http"
+    "todos-api:8082:docker"
     "frontend:3000:http"
     "log-message-processor:running:docker"
 )
@@ -77,10 +77,10 @@ get_service_metrics() {
     local service="$1"
     local host="$2"
     local port="$3"
-    
+
     case "$service" in
         "auth-api")
-            # Verificar estado del circuit breaker
+            # Verificar estado del circuit breaker (endpoint disponible sin auth)
             if check_http_service "$service" "$host" "$port" "/health/circuit-breaker" 2; then
                 local cb_state
                 cb_state=$(curl -s "http://$host:$port/health/circuit-breaker" 2>/dev/null | grep -o '"state":"[^"]*"' | cut -d'"' -f4 2>/dev/null || echo "unknown")
@@ -90,21 +90,19 @@ get_service_metrics() {
             fi
             ;;
         "todos-api")
-            # Verificar cache hits (si implementado)
-            if check_http_service "$service" "$host" "$port" "/health" 2; then
-                echo "Cache:OK"
+            # Como requiere auth, solo verificar si contenedor está corriendo
+            if check_docker_container "$service"; then
+                echo "Container:OK"
             else
-                echo "Cache:FAIL"
+                echo "Container:DOWN"
             fi
             ;;
         "users-api")
-            # Verificar cantidad de usuarios
-            if check_http_service "$service" "$host" "$port" "/users" 2; then
-                local user_count
-                user_count=$(curl -s "http://$host:$port/users" 2>/dev/null | grep -o '"id":[0-9]*' | wc -l 2>/dev/null || echo "0")
-                echo "Users:$user_count"
+            # Como requiere auth, solo verificar si contenedor está corriendo
+            if check_docker_container "$service"; then
+                echo "Container:OK"
             else
-                echo "Users:N/A"
+                echo "Container:DOWN"
             fi
             ;;
         "redis-todo")
@@ -139,14 +137,14 @@ get_service_metrics() {
     esac
 }
 
-# Función para mostrar estado de un servicio
+# Función para mostrar estado de un servicio y devolver fallos
 show_service_status() {
     local service="$1"
     local host="$2"
     local port="$3"
     local check_type="$4"
     local failures="${5:-0}"
-    
+
     if [[ "$check_type" == "redis" ]]; then
         if check_tcp_service "$host" "$port"; then
             printf "${GREEN}✓ %-20s ${BLUE}%s:%s${NC}" "$service" "$host" "$port"
@@ -164,7 +162,13 @@ show_service_status() {
             ((failures++))
         fi
     else
-        if check_http_service "$service" "$host" "$port" "/" 3; then
+        # Usar endpoint específico para cada servicio
+        local endpoint="/"
+        if [[ "$service" == "auth-api" ]]; then
+            endpoint="/health/circuit-breaker"
+        fi
+
+        if check_http_service "$service" "$host" "$port" "$endpoint" 3; then
             printf "${GREEN}✓ %-20s ${BLUE}%s:%s${NC}" "$service" "$host" "$port"
             failures=0
         else
@@ -172,29 +176,30 @@ show_service_status() {
             ((failures++))
         fi
     fi
-    
+
     # Mostrar métricas
     local metrics
     metrics=$(get_service_metrics "$service" "$host" "$port")
     if [ -n "$metrics" ]; then
         printf " ${YELLOW}[$metrics]${NC}"
     fi
-    
+
     # Mostrar contador de fallos
     if [ "$failures" -gt 0 ]; then
         printf " ${RED}(${failures} fallos)${NC}"
     fi
-    
+
     echo
-    
-    echo "$failures"
+
+    # Devolver el número de fallos como código de salida
+    return $failures
 }
 
 # Función para mostrar estado de todos los servicios
 show_all_status() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     echo
     info "Estado de Servicios - $timestamp"
     echo "======================================"
@@ -204,14 +209,15 @@ show_all_status() {
     for service_info in "${SERVICES[@]}"; do
         IFS=':' read -r service port check_type <<< "$service_info"
         host="localhost"
-        
+
         local current_failures="${service_failures[$service]:-0}"
-        local new_failures
-        new_failures=$(show_service_status "$service" "$host" "$port" "$check_type" "$current_failures")
+        # La función devuelve el código de error (número de fallos)
+        show_service_status "$service" "$host" "$port" "$check_type" "$current_failures"
+        local new_failures=$?
         service_failures[$service]="$new_failures"
-        
+
         if [ "$new_failures" -ge "$ALERT_THRESHOLD" ]; then
-            warning "🚨 ALERTA: $service ha fallado $new_failures veces consecutivas"
+            warning "ALERTA: $service ha fallado $new_failures veces consecutivas"
         fi
     done
 }
