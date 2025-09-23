@@ -14,6 +14,23 @@
 
 Beneficios: reducción de latencia en lecturas, menor carga en el origen. Riesgos: datos eventualmente desactualizados hasta la expiración; se mitiga con invalidación en mutaciones.
 
+- Pruebas (Jest):
+
+  - `todos-api/__mocks__/redis.js`: mock de Redis en memoria compatible con las llamadas usadas.
+  - `todos-api/__tests__/cache-aside.test.js` verifica:
+    - Primer `GET /todos` responde con `X-Cache: MISS` y populariza Redis.
+    - Segundo `GET /todos` responde con `X-Cache: HIT`.
+    - `POST /todos` invalida la clave; siguiente `GET` vuelve a ser `MISS`.
+  - Configuración: `todos-api/jest.config.js` y script `npm test` en `todos-api/package.json`.
+
+- CI (GitHub Actions):
+
+  - En `build-todos-api` se ejecuta `npm test`.
+  - Job paralelo `todos-cache-test` corre específicamente los tests de `todos-api` (Node 18, `npm ci`, `npm test`) para visibilidad junto a `integration`, `retry-test` y `breaker-test`.
+
+- Cómo correr localmente:
+  - `cd todos-api && npm install && npm test`
+
 ### Circuit Breaker (aplicado)
 
 - **Servicio**: `auth-api`
