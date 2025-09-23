@@ -106,3 +106,19 @@ Alternativas relacionadas: autoscaling (HPA/KEDA) o federated identity (OIDC con
     - Excede → responde `429 { message: 'Too Many Requests' }`.
 
 Beneficios: defensa en capas, fairness por usuario, y protección temprana en gateway. Consideraciones: ajustar `rate/burst` según métricas; no reintentar 429 en clientes.
+
+#### Pruebas y CI
+
+- Prueba de ráfagas (bash): `scripts/rate-limit-test.sh`
+
+  - Hace login vía gateway (`/login`) para obtener un JWT.
+  - Lanza 30 requests concurrentes a `/todos` con `Authorization: Bearer <token>` y espera observar una mezcla de `200` y `429`.
+  - Lanza 12 requests concurrentes a `/login` y espera observar múltiples `429` (regla más estricta).
+  - Falla si no hay al menos un `429` en ambas rutas, o si todas las respuestas de `/todos` son limitadas.
+  - Ejecutar local:
+    - `docker compose up -d --build && bash scripts/rate-limit-test.sh`
+
+- CI (GitHub Actions): Job `rate-limit-test` en `.github/workflows/ci-integrations.yml`
+  - Levanta el stack con `docker compose up -d --build`.
+  - Espera readiness del gateway (`http://localhost:3000/`) y de `auth-api`.
+  - Ejecuta el script `scripts/rate-limit-test.sh` y valida códigos `200/429` esperados.
