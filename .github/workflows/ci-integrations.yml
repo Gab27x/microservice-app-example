@@ -204,3 +204,28 @@ jobs:
       - name: Run todos-api cache-aside tests
         working-directory: todos-api
         run: npm test
+
+  rate-limit-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose up (base stack)
+        run: |
+          docker compose up -d --build
+          # Espera al gateway (frontend NGINX)
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:3000/ && break
+            echo "Esperando gateway (frontend)... ($i)"
+            sleep 2
+          done
+          # Espera a auth-api también para login
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:8000/version && break
+            echo "Esperando auth-api... ($i)"
+            sleep 2
+          done
+      - name: Run rate limiting test
+        run: |
+          chmod +x ./scripts/rate-limit-test.sh
+          ./scripts/rate-limit-test.sh | tee rate-limit-result.json

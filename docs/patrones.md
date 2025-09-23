@@ -83,3 +83,26 @@ Alternativas relacionadas: autoscaling (HPA/KEDA) o federated identity (OIDC con
   - No se reintentan operaciones no idempotentes (p. ej., POST).
   - El breaker mantiene contadores accesibles en `GET /status/circuit-breaker` para observabilidad básica.
   - Futuro: exponer métricas Prometheus del retry/breaker si se requiere monitoreo avanzado.
+
+### Rate Limiting (aplicado)
+
+- Capa 1 – Gateway (NGINX en `frontend/nginx.conf`)
+
+  - Zonas declaradas en el contexto `http`:
+    - `limit_req_zone $binary_remote_addr zone=per_ip_5rps:10m rate=5r/s;`
+    - `limit_req_zone $binary_remote_addr zone=auth_1rps:10m rate=1r/s;`
+    - `limit_req_status 429;`
+  - Reglas por ruta:
+    - `/login`: `limit_req zone=auth_1rps burst=5 nodelay;`
+    - `/todos`: `limit_req zone=per_ip_5rps burst=10 nodelay;`
+  - Efecto: limita por IP y corta exceso con 429 antes de llegar a los servicios.
+
+- Capa 2 – Servicio `todos-api` (Redis + `rate-limiter-flexible`)
+  - Dependencia: `rate-limiter-flexible@2` y Redis compartido (`redis-todo`).
+  - Variables en `docker-compose.yml`:
+    - `RATE_LIMIT_POINTS=100`, `RATE_LIMIT_DURATION=60`, `RATE_LIMIT_BLOCK=60`.
+  - Middleware global en `todos-api/server.js`:
+    - Clave por usuario (`req.user.sub`) si hay JWT; si no, por IP.
+    - Excede → responde `429 { message: 'Too Many Requests' }`.
+
+Beneficios: defensa en capas, fairness por usuario, y protección temprana en gateway. Consideraciones: ajustar `rate/burst` según métricas; no reintentar 429 en clientes.
