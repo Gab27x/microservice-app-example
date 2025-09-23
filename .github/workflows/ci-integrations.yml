@@ -170,3 +170,23 @@ jobs:
         run: |
           chmod +x ./scripts/test-retry.sh
           ./scripts/test-retry.sh
+
+  breaker-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq (optional)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Compose up (base stack)
+        run: |
+          docker compose up -d --build
+          # Espera a que el endpoint del breaker esté disponible
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:8000/status/circuit-breaker && break
+            echo "Esperando circuit-breaker... ($i)"
+            sleep 2
+          done
+      - name: Run circuit breaker test
+        run: |
+          bash scripts/cb-test.sh
