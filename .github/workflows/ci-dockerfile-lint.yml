@@ -14,12 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: |
-            auth-api/Dockerfile
-            users-api/Dockerfile
-            todos-api/Dockerfile
-            frontend/Dockerfile
-            log-message-processor/Dockerfile
+      - name: Run Hadolint over all Dockerfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files | grep -E '(^|/)Dockerfile$' || true)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No Dockerfiles found"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Linting $f"
+            docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < "$f"
+          done
