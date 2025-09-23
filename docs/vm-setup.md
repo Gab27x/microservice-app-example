@@ -152,4 +152,3 @@ sudo systemctl reload ssh
 - Despliegue: Docker Compose con variables `.env`; fácil de parametrizar por owner (`gab27x`, `oscarmura`, `andres-chamorro`).
 - CI/CD: Actions para CI y Jenkins para CD; tags por rama (`staging-latest`/`prod-latest`).
 - Patrón aplicado: cache-aside en `todos-api` con Redis e invalidación en mutaciones.
-

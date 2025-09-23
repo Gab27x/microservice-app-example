@@ -44,8 +44,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "18" }
-      - run: npm install
-      - run: npm test || echo "no tests"
+      - run: npm ci || npm install
+      - run: npm test
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -158,3 +158,74 @@ jobs:
             http://localhost:8082/todos -H "Content-Type: application/json" \
             -d '{"content":"demo"}'
           curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/todos
+
+  retry-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Run deterministic retry test with WireMock
+        run: |
+          chmod +x ./scripts/test-retry.sh
+          ./scripts/test-retry.sh
+
+  breaker-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq (optional)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Compose up (base stack)
+        run: |
+          docker compose up -d --build
+          # Espera a que el endpoint del breaker esté disponible
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:8000/status/circuit-breaker && break
+            echo "Esperando circuit-breaker... ($i)"
+            sleep 2
+          done
+      - name: Run circuit breaker test
+        run: |
+          bash scripts/cb-test.sh
+
+  todos-cache-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "18" }
+      - name: Install deps
+        working-directory: todos-api
+        run: npm ci || npm install
+      - name: Run todos-api cache-aside tests
+        working-directory: todos-api
+        run: npm test
+
+  rate-limit-test:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose up (base stack)
+        run: |
+          docker compose up -d --build
+          # Espera al gateway (frontend NGINX)
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:3000/ && break
+            echo "Esperando gateway (frontend)... ($i)"
+            sleep 2
+          done
+          # Espera a auth-api también para login
+          for i in {1..30}; do
+            curl -sf -o /dev/null http://localhost:8000/version && break
+            echo "Esperando auth-api... ($i)"
+            sleep 2
+          done
+      - name: Run rate limiting test
+        run: |
+          chmod +x ./scripts/rate-limit-test.sh
+          ./scripts/rate-limit-test.sh | tee rate-limit-result.json
