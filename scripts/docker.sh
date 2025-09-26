@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-
-set -Eeuo pipefail
+set -euo pipefail
 
 # Directorios del proyecto
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Resolver ubicación de docker-compose.yml: primero junto al script, luego en el padre
 if [[ -f "${SCRIPT_DIR}/docker-compose.yml" ]]; then
