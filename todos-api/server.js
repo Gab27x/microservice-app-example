@@ -58,7 +58,7 @@ app.get('/health', function(req, res) {
   });
 });
 
-app.use(jwt({ secret: jwtSecret }))
+app.use(jwt({ secret: jwtSecret, algorithms: ['HS256'] }).unless({path: ['/health']}))
 app.use(zipkinMiddleware({tracer}));
 // Rate limiting distribuido con Redis (por IP o usuario JWT)
 const { RateLimiterRedis } = require('rate-limiter-flexible');
