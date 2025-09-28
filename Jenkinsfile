@@ -295,7 +295,7 @@ pipeline {
                                         echo "🔧 Activando modo testing para retry pattern..."
                                         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                             $VM_USER@$VM_IP "cd $APP_PATH && \
-                                            docker-compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
+                                            docker compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
                                             sleep 15 && \
                                             echo '✅ WireMock disponible para retry tests'"
                                     '''
@@ -325,8 +325,8 @@ pipeline {
                                         echo "🧹 Limpiando servicios de testing..."
                                         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                             $VM_USER@$VM_IP "cd $APP_PATH && \
-                                            docker-compose -f docker-compose.yml -f docker-compose.testing.yml down && \
-                                            docker-compose -f docker-compose.yml up -d && \
+                                            docker compose -f docker-compose.yml -f docker-compose.testing.yml down && \
+                                            docker compose -f docker-compose.yml up -d && \
                                             echo '✅ Vuelto a modo producción'"
                                     '''
                                 }
@@ -402,11 +402,13 @@ pipeline {
                             sh '''
                                 export SSHPASS="$DEPLOY_PASSWORD"
                                 echo "📂 Copiando configuración de testing a la VM..."
-                                        sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                                            docker-compose.testing.yml $VM_USER@$VM_IP:$APP_PATH/                                echo "🔧 Activando modo testing..."
+                                sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                    docker-compose.testing.yml $VM_USER@$VM_IP:$APP_PATH/
+                                
+                                echo "🔧 Activando modo testing..."
                                 sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                     $VM_USER@$VM_IP "cd $APP_PATH && \
-                                    docker-compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
+                                    docker compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
                                     sleep 15 && \
                                     echo '✅ Servicios de testing activos'"
                             '''
@@ -429,15 +431,17 @@ pipeline {
                         currentBuild.result = 'UNSTABLE'
                     } finally {
                         // Limpiar servicios de testing y volver a producción
-                        sshCommand remote: remote, command: '''
-                            cd /home/appuser/microservice-app-example
-                            echo "🧹 Limpiando servicios de testing..."
-                            docker-compose -f docker-compose.yml -f docker-compose.testing.yml down
-                            docker-compose -f docker-compose.yml up -d
-                            echo "✅ Vuelto a modo producción"
-                            docker-compose -f docker-compose.yml up -d
-                            echo "✅ Vuelto a modo producción"
-                        '''
+                        withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
+                            sh '''
+                                export SSHPASS="$DEPLOY_PASSWORD"
+                                echo "🧹 Limpiando servicios de testing..."
+                                sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                    $VM_USER@$VM_IP "cd $APP_PATH && \
+                                    docker compose -f docker-compose.yml -f docker-compose.testing.yml down && \
+                                    docker compose -f docker-compose.yml up -d && \
+                                    echo '✅ Vuelto a modo producción'"
+                            '''
+                        }
                     }
                 }
             }
