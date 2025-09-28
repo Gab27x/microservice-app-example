@@ -75,8 +75,12 @@ echo "$cb_output" > test-results/cb-test-full.log
 # Test adicional: verificar endpoint de circuit breaker directamente
 say "🔍 Verificando endpoint de circuit breaker directamente..."
 
+# Esperar un poco para que el servicio esté listo después de los tests
+sleep 2
+
 cb_status=$(curl -s --max-time 10 "http://$VM_IP:8000/status/circuit-breaker" 2>/dev/null || \
            curl -s --max-time 10 "http://$VM_IP:8000/health/circuit-breaker" 2>/dev/null || \
+           curl -s --max-time 10 "http://$VM_IP:8000/debug/breaker" 2>/dev/null || \
            echo '{"status":"unknown"}')
 
 if echo "$cb_status" | grep -q "state\|circuit\|breaker"; then

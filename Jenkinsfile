@@ -412,13 +412,15 @@ pipeline {
                                         sleep 15 && \
                                         echo '✅ Servicios de testing activos para cache tests'"
                                 '''
-                            }                        withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
-                            sh '''
-                                echo "Ejecutando test de cache pattern..."
-                                chmod +x ./scripts/jenkins-cache-test.sh
-                                ./scripts/jenkins-cache-test.sh "$VM_IP"
-                            '''
-                        }
+                            }
+                            
+                            withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
+                                sh '''
+                                    echo "Ejecutando test de cache pattern..."
+                                    chmod +x ./scripts/jenkins-cache-test.sh
+                                    ./scripts/jenkins-cache-test.sh "$VM_IP"
+                                '''
+                            }
                         echo "✅ Test Cache Pattern completado exitosamente"
                     } catch (Exception e) {
                         echo "⚠️ Test Cache Pattern falló: ${e.message}"
