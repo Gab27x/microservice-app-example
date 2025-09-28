@@ -30,8 +30,7 @@ pipeline {
         VM_USER = "deploy"
         APP_PATH = "/opt/microservice-app"
         
-        // IP por defecto (opcional, ajusta según tu infraestructura)
-        DEFAULT_VM_IP = "127.0.0.1" // Cambia por la IP real de tu VM o déjalo vacío
+        // URLs se configurarán dinámicamente con la IP obtenida
         
         // Timeouts y configuración
         HEALTH_CHECK_TIMEOUT = "60"
@@ -67,65 +66,77 @@ pipeline {
             }
             steps {
                 script {
-                    // Opción 1: Intentar obtener IP desde parámetro del job
-                    if (params.VM_IP) {
-                        env.VM_IP = params.VM_IP
-                        echo "VM IP obtenida desde parámetro: ${env.VM_IP}"
+                    // Prioridad 1: IP desde parámetro manual
+                    if (params.VM_IP && params.VM_IP.trim() != '') {
+                        env.VM_IP = params.VM_IP.trim()
+                        echo "✅ VM IP obtenida desde parámetro: ${env.VM_IP}"
                     }
-                    // Opción 2: Usar IP por defecto si no hay parámetro
-                    else if (env.DEFAULT_VM_IP) {
-                        env.VM_IP = env.DEFAULT_VM_IP
-                        echo "VM IP usando default: ${env.VM_IP}"
-                    }
-                    // Opción 3: Intentar obtener desde job upstream usando build step
+                    // Prioridad 2: Obtener IP desde artefacto de job de infraestructura
                     else {
                         try {
-                            echo "Intentando obtener IP desde job de infraestructura..."
-                            def upstreamBuild = build(
-                                job: 'infra-microservice-app-example/infra%2Fmain',
-                                wait: false,
-                                propagate: false
-                            )
+                            echo "🔍 Intentando obtener IP desde artefacto del job de infraestructura..."
                             
-                            if (upstreamBuild && upstreamBuild.result == 'SUCCESS') {
-                                // Intentar leer desde workspace si existe
-                                def propsFile = "${env.WORKSPACE}/../infra-microservice-app-example_infra_main/droplet.properties"
-                                if (fileExists(propsFile)) {
-                                    def props = readProperties file: propsFile
-                                    env.VM_IP = props.DROPLET_IP ?: props.VM_IP
-                                    echo "IP obtenida desde job upstream: ${env.VM_IP}"
+                            // Usar curl para obtener el artefacto (más compatible)
+                            def jobUrl = "${env.JENKINS_URL}job/infra-microservice-app-example/job/infra%252Fmain/lastSuccessfulBuild/artifact/droplet.properties"
+                            echo "📥 Descargando desde: ${jobUrl}"
+                            
+                            def curlResult = sh(
+                                script: "curl -s -f '${jobUrl}' || echo 'CURL_FAILED'",
+                                returnStdout: true
+                            ).trim()
+                            
+                            if (curlResult != 'CURL_FAILED' && curlResult != '') {
+                                echo "✅ Artefacto descargado exitosamente"
+                                echo "📄 Contenido del artefacto:\n${curlResult}"
+                                
+                                // Extraer DROPLET_IP del contenido
+                                def lines = curlResult.split('\n')
+                                for (line in lines) {
+                                    if (line.startsWith('DROPLET_IP=')) {
+                                        env.VM_IP = line.split('=')[1].trim()
+                                        echo "✅ IP extraída del artefacto: ${env.VM_IP}"
+                                        break
+                                    }
                                 }
+                                
+                                if (!env.VM_IP) {
+                                    echo "⚠️  No se encontró DROPLET_IP en el artefacto"
+                                    echo "📄 Contenido completo: ${curlResult}"
+                                }
+                            } else {
+                                echo "❌ No se pudo descargar el artefacto con curl"
                             }
                         } catch (Exception e) {
-                            echo "No se pudo obtener IP desde job upstream: ${e.message}"
+                            echo "❌ Error obteniendo artefacto: ${e.message}"
+                            echo "💡 Posibles causas:"
+                            echo "   • Job de infraestructura no existe o no ha ejecutado"
+                            echo "   • No hay builds exitosos"
+                            echo "   • Artefacto no existe"
                         }
                     }
                     
-                    // Validar que tenemos una IP
-                    if (!env.VM_IP || env.VM_IP == "127.0.0.1") {
-                        echo "⚠️  No se pudo obtener la IP de la VM automáticamente"
-                        echo "💡 Para configurar la IP de tu VM:"
+                    // Validar que tenemos una IP válida
+                    if (!env.VM_IP || env.VM_IP.trim() == '') {
+                        echo "❌ No se pudo obtener la IP de la VM"
+                        echo "💡 Para resolver este problema:"
                         echo ""
-                        echo "   OPCIÓN 1 - Ejecutar manualmente con parámetro:"
+                        echo "   OPCIÓN 1 - Ejecutar con parámetro manual:"
                         echo "   • Ve a 'Build with Parameters'"
-                        echo "   • Introduce la IP real en el campo 'VM_IP'"
-                        echo "   • Ejemplo: 167.172.XXX.XXX"
+                        echo "   • En 'VM_IP' introduce la IP de tu VM de DigitalOcean"
+                        echo "   • Ejemplo: 167.172.123.456"
                         echo ""
-                        echo "   OPCIÓN 2 - Configurar IP por defecto:"
-                        echo "   • Edita línea 27 del Jenkinsfile"
-                        echo "   • DEFAULT_VM_IP = \"TU_IP_REAL\""
+                        echo "   OPCIÓN 2 - Verificar job de infraestructura:"
+                        echo "   • Ejecutar 'infra-microservice-app-example/infra/main'"
+                        echo "   • Verificar que genera 'droplet.properties'"
+                        echo "   • Verificar que contiene 'DROPLET_IP=x.x.x.x'"
                         echo ""
-                        echo "   OPCIÓN 3 - Usar job de infraestructura:"
-                        echo "   • Verificar que 'infra-microservice-app-example/infra/main' existe"
-                        echo "   • Verificar que genera droplet.properties con DROPLET_IP"
-                        echo ""
-                        
-                        if (env.VM_IP == "127.0.0.1") {
-                            echo "🚨 Usando IP de localhost (127.0.0.1) - esto es solo para testing local"
-                            echo "   Para testing real, configura la IP de tu VM en DigitalOcean"
-                        } else {
-                            error "VM_IP requerida. Configura la IP de tu VM usando las opciones de arriba."
-                        }
+                        error "❌ VM_IP requerida para continuar con los tests"
+                    }
+                    
+                    // Validar formato de IP
+                    if (!env.VM_IP.matches(/\d+\.\d+\.\d+\.\d+/)) {
+                        echo "⚠️  IP no parece tener formato válido: ${env.VM_IP}"
+                        echo "   Continuando de todas formas..."
                     }
                     
                     echo "✅ VM IP configurada: ${env.VM_IP}"
