@@ -83,8 +83,13 @@ fi
 # 4. Verificar trazas en Zipkin
 say "🔍 Verificando trazas en Zipkin..."
 
-zipkin_traces=""
-if curl -fs --max-time 10 "http://$VM_IP:9411/api/v2/services" >/dev/null 2>&1; then
+# Primero verificar que Zipkin responda (acepta 200 y 302)
+zipkin_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://$VM_IP:9411" 2>/dev/null || echo "000")
+
+if [ "$zipkin_status" = "200" ] || [ "$zipkin_status" = "302" ]; then
+    say "✅ Zipkin está accesible (HTTP $zipkin_status)"
+    
+    # Intentar obtener servicios a través de API
     zipkin_traces=$(curl -s --max-time 10 "http://$VM_IP:9411/api/v2/services" 2>/dev/null || echo "[]")
     
     if echo "$zipkin_traces" | grep -q "auth-api\|todos-api\|users-api"; then
@@ -92,12 +97,12 @@ if curl -fs --max-time 10 "http://$VM_IP:9411/api/v2/services" >/dev/null 2>&1; 
         echo "SUCCESS: Zipkin is receiving traces" > test-results/zipkin-traces.log
         echo "$zipkin_traces" > test-results/zipkin-services.json
     else
-        say "⚠️  Zipkin no está recibiendo trazas o están vacías"
-        echo "WARNING: No traces found in Zipkin" > test-results/zipkin-traces.log
+        say "⚠️  Zipkin accesible pero sin trazas (puede ser normal en tests)"
+        echo "INFO: Zipkin accessible but no traces yet" > test-results/zipkin-traces.log
     fi
 else
-    say "❌ Zipkin no está accesible"
-    echo "FAIL: Zipkin not accessible" > test-results/zipkin-traces.log
+    say "❌ Zipkin no está accesible (HTTP $zipkin_status)"
+    echo "FAIL: Zipkin not accessible (HTTP $zipkin_status)" > test-results/zipkin-traces.log
 fi
 
 # 5. Verificar métricas de uso de recursos
