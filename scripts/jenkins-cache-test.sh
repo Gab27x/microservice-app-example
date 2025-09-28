@@ -102,7 +102,7 @@ TOKEN=$(curl -s --max-time 10 -X POST "http://$VM_IP:8000/login" \
 
 if [ -n "$TOKEN" ]; then
     # Hacer varias solicitudes para probar cache
-    say "🔑 Token obtenido, probando comportamiento de cache..."
+    say "🔑 Token obtenido: ${TOKEN:0:20}..., probando comportamiento de cache..."
     
     # Primera solicitud (debería llenar cache)
     start_time=$(date +%s%N)
@@ -110,6 +110,9 @@ if [ -n "$TOKEN" ]; then
         "http://$VM_IP:8082/todos" 2>/dev/null || echo "[]")
     end_time=$(date +%s%N)
     time1=$((($end_time - $start_time) / 1000000)) # Convert to milliseconds
+    
+    # Pequeña pausa
+    sleep 1
     
     # Segunda solicitud (debería usar cache, ser más rápida)
     start_time=$(date +%s%N)

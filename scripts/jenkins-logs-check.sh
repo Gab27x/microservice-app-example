@@ -174,7 +174,7 @@ cat > test-results/application-health.json << EOF
     },
     "tracing": {
         "zipkin_accessible": $(curl -fs --max-time 5 "http://$VM_IP:9411" >/dev/null 2>&1 && echo "true" || echo "false"),
-        "services_traced": $(echo "$zipkin_traces" | grep -o "auth-api\|todos-api\|users-api" | wc -l || echo "0")
+        "services_traced": $(echo "${zipkin_traces:-[]}" | grep -o "auth-api\|todos-api\|users-api" | wc -l || echo "0")
     },
     "overall_status": "$([ "$running_services" -eq "$total_services" ] && [ "$total_errors" -eq 0 ] && echo "HEALTHY" || echo "DEGRADED")"
 }
