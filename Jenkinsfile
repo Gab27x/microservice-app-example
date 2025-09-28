@@ -7,6 +7,14 @@ pipeline {
         timeout(time: 45, unit: 'MINUTES')
     }
     
+    triggers {
+        // Trigger automático cuando el job de infraestructura termine exitosamente
+        upstream(upstreamProjects: 'infraestructura-microservices', threshold: hudson.model.Result.SUCCESS)
+        
+        // También monitorea cambios en SCM cada 10 minutos (solo para master/main)
+        scm('H/10 * * * *')
+    }
+    
     environment {
         // Credenciales para conectar a la VM
         VM_USER = "deploy"
@@ -24,7 +32,26 @@ pipeline {
     }
     
     stages {
+        stage("Verificar Branch") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
+            steps {
+                echo "✅ Ejecutando tests de integridad en branch: ${env.BRANCH_NAME}"
+                echo "📋 Pipeline de verificación iniciado para producción"
+            }
+        }
+        
         stage("Obtener IP de VM") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 script {
                     // Obtener la IP de la VM desde el artefacto del job de infraestructura
@@ -54,6 +81,12 @@ pipeline {
         }
         
         stage("Verificar Conectividad VM") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                     sh '''
@@ -79,6 +112,12 @@ pipeline {
         }
         
         stage("Health Checks Básicos") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             parallel {
                 stage("Frontend Health") {
                     steps {
@@ -117,6 +156,12 @@ pipeline {
         }
         
         stage("Smoke Test Completo") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 sh '''
                     echo "Ejecutando smoke test completo..."
@@ -127,6 +172,12 @@ pipeline {
         }
         
         stage("Pruebas de Integridad") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             parallel {
                 stage("Test Retry Pattern") {
                     steps {
@@ -167,6 +218,12 @@ pipeline {
         }
         
         stage("Test Cache Pattern") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                     sh '''
@@ -179,6 +236,12 @@ pipeline {
         }
         
         stage("Verificar Logs y Trazas") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                     sh '''
@@ -191,6 +254,12 @@ pipeline {
         }
         
         stage("Reporte de Estado Final") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
             steps {
                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                     sh '''
