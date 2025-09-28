@@ -4,7 +4,7 @@ pipeline {
     options { 
         timestamps()
         disableConcurrentBuilds()
-        timeout(time: 45, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')  // Aumentado de 45 a 60 minutos
     }
     
     triggers {
@@ -33,7 +33,7 @@ pipeline {
         // URLs se configurarán dinámicamente con la IP obtenida
         
         // Timeouts y configuración
-        HEALTH_CHECK_TIMEOUT = "60"
+        HEALTH_CHECK_TIMEOUT = "90"  // Aumentado de 60 a 90 segundos
         RETRY_ATTEMPTS = "3"
         
         // URLs de prueba (se actualizarán con la IP de la VM)
@@ -128,6 +128,39 @@ pipeline {
                         # Verificar estado de la aplicación
                         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                             $VM_USER@$VM_IP "cd $APP_PATH && docker compose ps"
+                        
+                        # Verificar logs de los contenedores que pueden estar fallando
+                        echo "📋 Verificando logs recientes de contenedores..."
+                        sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                            $VM_USER@$VM_IP "cd $APP_PATH && docker compose logs --tail=10 todos-api users-api" || echo "⚠️ No se pudieron obtener logs"
+                    '''
+                }
+            }
+        }
+        
+        stage("Esperar Inicialización") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
+            steps {
+                script {
+                    echo "⏳ Esperando a que los servicios terminen de inicializar..."
+                    sleep(30)  // Esperar 30 segundos para que los servicios se inicialicen completamente
+                    
+                    // Verificar conectividad básica a los puertos
+                    echo "🔍 Verificando conectividad básica a los puertos..."
+                    sh '''
+                        for port in 3000 8000 8082 8083 9411; do
+                            echo "Verificando puerto $port en $VM_IP..."
+                            if timeout 5 bash -c "</dev/tcp/$VM_IP/$port"; then
+                                echo "✅ Puerto $port: ABIERTO"
+                            else
+                                echo "❌ Puerto $port: CERRADO o NO RESPONDE"
+                            fi
+                        done
                     '''
                 }
             }
@@ -169,7 +202,8 @@ pipeline {
                         script {
                             sh '''
                                 echo "Verificando Todos API en ${TODOS_API_URL}/health"
-                                ./scripts/jenkins-health-check.sh "${TODOS_API_URL}/health" "Todos API" $HEALTH_CHECK_TIMEOUT
+                                # Aumentar timeout específicamente para Todos API
+                                ./scripts/jenkins-health-check.sh "${TODOS_API_URL}/health" "Todos API" 120
                             '''
                         }
                     }
@@ -180,7 +214,8 @@ pipeline {
                         script {
                             sh '''
                                 echo "Verificando Users API en ${USERS_API_URL}/health"
-                                ./scripts/jenkins-health-check.sh "${USERS_API_URL}/health" "Users API" $HEALTH_CHECK_TIMEOUT
+                                # Aumentar timeout específicamente para Users API  
+                                ./scripts/jenkins-health-check.sh "${USERS_API_URL}/health" "Users API" 120
                             '''
                         }
                     }

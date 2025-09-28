@@ -19,13 +19,27 @@ wait_for_url() {
     local sleep_s="${3:-1}"
     
     for i in $(seq 1 "$tries"); do
-        if curl -fs --max-time 5 "$url" >/dev/null 2>&1; then
-            say "$SERVICE_NAME está disponible ✅"
+        # Intentar con curl y capturar más información
+        local response_code
+        response_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || echo "000")
+        
+        if [[ "$response_code" =~ ^[23][0-9][0-9]$ ]]; then
+            say "$SERVICE_NAME está disponible ✅ (HTTP $response_code)"
             return 0
+        elif [[ "$response_code" != "000" ]]; then
+            say "Intento $i/$tries - $SERVICE_NAME respondió con HTTP $response_code, reintentando..."
+        else
+            say "Intento $i/$tries - $SERVICE_NAME no responde (timeout/conexión rechazada), reintentando..."
         fi
-        say "Intento $i/$tries - $SERVICE_NAME no disponible aún..."
+        
         sleep "$sleep_s"
     done
+    
+    # Último intento con información detallada del error
+    say "Realizando diagnóstico final..."
+    local final_error
+    final_error=$(curl -s --max-time 10 "$url" 2>&1 || echo "Sin respuesta")
+    say "Error final: $final_error"
     
     say "$SERVICE_NAME no está disponible después de $tries intentos ❌"
     return 1
