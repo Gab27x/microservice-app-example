@@ -68,11 +68,12 @@ pipeline {
             script {
                 echo "📥 Copiando droplet.properties del job de infraestructura..."
                 copyArtifacts(
-                    projectName: 'infra-microservice-app-example/infra/main',
+                    projectName: 'infra-microservice-app-example/infra%2Fmain',
                     selector: lastSuccessful(),
                     filter: 'droplet.properties',
                     fingerprintArtifacts: true
                 )
+
 
                 def ipValue = sh(script: 'grep "^DROPLET_IP=" droplet.properties | cut -d= -f2', returnStdout: true).trim()
                 if (!ipValue) {
