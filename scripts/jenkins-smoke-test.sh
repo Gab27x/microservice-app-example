@@ -26,6 +26,7 @@ say "🧪 Iniciando smoke test en VM: $VM_IP"
 # URLs de los servicios
 AUTH_URL="http://$VM_IP:8000"
 TODOS_URL="http://$VM_IP:8082"
+USERS_URL="http://$VM_IP:8083"
 FRONTEND_URL="http://$VM_IP:3000"
 
 # 1. Verificar que todos los servicios respondan
@@ -34,6 +35,7 @@ say "1️⃣  Verificando conectividad básica de servicios..."
 services=(
     "$AUTH_URL/version:Auth-API"
     "$TODOS_URL/health:Todos-API"
+    "$USERS_URL/health:Users-API"
     "$FRONTEND_URL:Frontend"
 )
 

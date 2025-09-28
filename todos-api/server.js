@@ -45,6 +45,18 @@ const recorder = new  BatchRecorder({
 const localServiceName = 'todos-api';
 const tracer = new Tracer({ctxImpl, recorder, localServiceName});
 
+// Body parser middleware (necesario para todos los endpoints)
+app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.json())
+
+// Health check endpoint (sin autenticación, rate limiting ni JWT)
+app.get('/health', function(req, res) {
+  res.status(200).json({
+    status: 'OK',
+    service: 'todos-api',
+    timestamp: new Date().toISOString()
+  });
+});
 
 app.use(jwt({ secret: jwtSecret }))
 app.use(zipkinMiddleware({tracer}));
@@ -77,8 +89,6 @@ app.use(function (err, req, res, next) {
     res.status(401).send({ message: 'invalid token' })
   }
 })
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(bodyParser.json())
 
 const routes = require('./routes')
 routes(app, {tracer, redisClient, logChannel})

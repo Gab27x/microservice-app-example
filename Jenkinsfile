@@ -40,6 +40,7 @@ pipeline {
         FRONTEND_PORT = "3000"
         AUTH_API_PORT = "8000"
         TODOS_API_PORT = "8082"
+        USERS_API_PORT = "8083"
         ZIPKIN_PORT = "9411"
     }
     
@@ -87,12 +88,14 @@ pipeline {
                 env.FRONTEND_URL = "http://${env.VM_IP}:${env.FRONTEND_PORT}"
                 env.AUTH_API_URL = "http://${env.VM_IP}:${env.AUTH_API_PORT}"
                 env.TODOS_API_URL = "http://${env.VM_IP}:${env.TODOS_API_PORT}"
+                env.USERS_API_URL = "http://${env.VM_IP}:${env.USERS_API_PORT}"
                 env.ZIPKIN_URL   = "http://${env.VM_IP}:${env.ZIPKIN_PORT}"
 
                 echo "🌐 URLs configuradas:"
                 echo "   Frontend: ${env.FRONTEND_URL}"
                 echo "   Auth API: ${env.AUTH_API_URL}"
                 echo "   Todos API: ${env.TODOS_API_URL}"
+                echo "   Users API: ${env.USERS_API_URL}"
                 echo "   Zipkin: ${env.ZIPKIN_URL}"
             }
         }
@@ -156,6 +159,28 @@ pipeline {
                             sh '''
                                 echo "Verificando Auth API en ${AUTH_API_URL}/version"
                                 ./scripts/jenkins-health-check.sh "${AUTH_API_URL}/version" "Auth API" $HEALTH_CHECK_TIMEOUT
+                            '''
+                        }
+                    }
+                }
+                
+                stage("Todos API Health") {
+                    steps {
+                        script {
+                            sh '''
+                                echo "Verificando Todos API en ${TODOS_API_URL}/health"
+                                ./scripts/jenkins-health-check.sh "${TODOS_API_URL}/health" "Todos API" $HEALTH_CHECK_TIMEOUT
+                            '''
+                        }
+                    }
+                }
+                
+                stage("Users API Health") {
+                    steps {
+                        script {
+                            sh '''
+                                echo "Verificando Users API en ${USERS_API_URL}/health"
+                                ./scripts/jenkins-health-check.sh "${USERS_API_URL}/health" "Users API" $HEALTH_CHECK_TIMEOUT
                             '''
                         }
                     }
