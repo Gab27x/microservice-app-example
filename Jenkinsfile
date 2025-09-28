@@ -12,10 +12,26 @@ pipeline {
         upstream(upstreamProjects: 'infraestructura-microservices', threshold: hudson.model.Result.SUCCESS)
     }
     
+    parameters {
+        string(
+            name: 'VM_IP',
+            defaultValue: '',
+            description: 'IP de la VM donde están desplegados los microservicios (opcional si se obtiene automáticamente)'
+        )
+        choice(
+            name: 'TEST_LEVEL',
+            choices: ['FULL', 'SMOKE_ONLY', 'PATTERNS_ONLY'],
+            description: 'Nivel de tests a ejecutar'
+        )
+    }
+    
     environment {
         // Credenciales para conectar a la VM
         VM_USER = "deploy"
         APP_PATH = "/opt/microservice-app"
+        
+        // IP por defecto (opcional, ajusta según tu infraestructura)
+        DEFAULT_VM_IP = "" // Puedes poner una IP fija aquí si siempre es la misma
         
         // Timeouts y configuración
         HEALTH_CHECK_TIMEOUT = "60"
@@ -51,28 +67,62 @@ pipeline {
             }
             steps {
                 script {
-                    // Obtener la IP de la VM desde el artefacto del job de infraestructura
-                    step([$class: 'CopyArtifact',
-                          projectName: 'infraestructura-microservices', // Ajusta el nombre del job de infra
-                          selector: [$class: 'LastSuccessfulBuildSelector'],
-                          filter: 'droplet.properties'
-                    ])
-                    
-                    // Leer la IP del archivo
-                    def props = readProperties file: 'droplet.properties'
-                    env.VM_IP = props.DROPLET_IP
-                    
-                    if (!env.VM_IP) {
-                        error "No se pudo obtener la IP de la VM del artefacto"
+                    // Opción 1: Intentar obtener IP desde parámetro del job
+                    if (params.VM_IP) {
+                        env.VM_IP = params.VM_IP
+                        echo "VM IP obtenida desde parámetro: ${env.VM_IP}"
+                    }
+                    // Opción 2: Usar IP por defecto si no hay parámetro
+                    else if (env.DEFAULT_VM_IP) {
+                        env.VM_IP = env.DEFAULT_VM_IP
+                        echo "VM IP usando default: ${env.VM_IP}"
+                    }
+                    // Opción 3: Intentar obtener desde job upstream usando build step
+                    else {
+                        try {
+                            echo "Intentando obtener IP desde job de infraestructura..."
+                            def upstreamBuild = build(
+                                job: 'infraestructura-microservices',
+                                wait: false,
+                                propagate: false
+                            )
+                            
+                            if (upstreamBuild && upstreamBuild.result == 'SUCCESS') {
+                                // Intentar leer desde workspace si existe
+                                def propsFile = "${env.WORKSPACE}/../infraestructura-microservices/droplet.properties"
+                                if (fileExists(propsFile)) {
+                                    def props = readProperties file: propsFile
+                                    env.VM_IP = props.DROPLET_IP ?: props.VM_IP
+                                }
+                            }
+                        } catch (Exception e) {
+                            echo "No se pudo obtener IP desde job upstream: ${e.message}"
+                        }
                     }
                     
-                    echo "VM IP obtenida: ${env.VM_IP}"
+                    // Validar que tenemos una IP
+                    if (!env.VM_IP) {
+                        echo "⚠️  No se pudo obtener la IP de la VM automáticamente"
+                        echo "💡 Opciones para configurar la IP:"
+                        echo "   1. Añadir parámetro 'VM_IP' al job"
+                        echo "   2. Configurar DEFAULT_VM_IP en environment"
+                        echo "   3. Instalar Copy Artifacts plugin"
+                        error "VM_IP requerida. Ver opciones de configuración arriba."
+                    }
+                    
+                    echo "✅ VM IP configurada: ${env.VM_IP}"
                     
                     // Configurar URLs de prueba
                     env.FRONTEND_URL = "http://${env.VM_IP}:${env.FRONTEND_PORT}"
                     env.AUTH_API_URL = "http://${env.VM_IP}:${env.AUTH_API_PORT}"
                     env.TODOS_API_URL = "http://${env.VM_IP}:${env.TODOS_API_PORT}"
                     env.ZIPKIN_URL = "http://${env.VM_IP}:${env.ZIPKIN_PORT}"
+                    
+                    echo "🌐 URLs configuradas:"
+                    echo "   Frontend: ${env.FRONTEND_URL}"
+                    echo "   Auth API: ${env.AUTH_API_URL}"
+                    echo "   Todos API: ${env.TODOS_API_URL}"
+                    echo "   Zipkin: ${env.ZIPKIN_URL}"
                 }
             }
         }
@@ -170,9 +220,15 @@ pipeline {
         
         stage("Pruebas de Integridad") {
             when {
-                anyOf {
-                    branch 'master'
-                    branch 'main'
+                allOf {
+                    anyOf {
+                        branch 'master'
+                        branch 'main'
+                    }
+                    anyOf {
+                        equals expected: 'FULL', actual: params.TEST_LEVEL
+                        equals expected: 'PATTERNS_ONLY', actual: params.TEST_LEVEL
+                    }
                 }
             }
             parallel {
@@ -216,9 +272,15 @@ pipeline {
         
         stage("Test Cache Pattern") {
             when {
-                anyOf {
-                    branch 'master'
-                    branch 'main'
+                allOf {
+                    anyOf {
+                        branch 'master'
+                        branch 'main'
+                    }
+                    anyOf {
+                        equals expected: 'FULL', actual: params.TEST_LEVEL
+                        equals expected: 'PATTERNS_ONLY', actual: params.TEST_LEVEL
+                    }
                 }
             }
             steps {
