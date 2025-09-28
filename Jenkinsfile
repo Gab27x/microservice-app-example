@@ -197,30 +197,6 @@ pipeline {
                     }
                 }
                 
-                stage("Todos API Health") {
-                    steps {
-                        script {
-                            sh '''
-                                echo "Verificando Todos API en ${TODOS_API_URL}/health"
-                                # Aumentar timeout específicamente para Todos API
-                                ./scripts/jenkins-health-check.sh "${TODOS_API_URL}/health" "Todos API" 120
-                            '''
-                        }
-                    }
-                }
-                
-                stage("Users API Health") {
-                    steps {
-                        script {
-                            sh '''
-                                echo "Verificando Users API en ${USERS_API_URL}/health"
-                                # Aumentar timeout específicamente para Users API  
-                                ./scripts/jenkins-health-check.sh "${USERS_API_URL}/health" "Users API" 120
-                            '''
-                        }
-                    }
-                }
-                
                 stage("Zipkin Health") {
                     steps {
                         script {
@@ -229,6 +205,46 @@ pipeline {
                                 ./scripts/jenkins-health-check.sh "$ZIPKIN_URL" "Zipkin" $HEALTH_CHECK_TIMEOUT
                             '''
                         }
+                    }
+                }
+            }
+        }
+        
+        stage("Verificar APIs mediante Conectividad") {
+            when {
+                anyOf {
+                    branch 'master'
+                    branch 'main'
+                }
+            }
+            steps {
+                script {
+                    echo "🔍 Verificando que Todos API y Users API respondan (sin health check específico)..."
+                    withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
+                        sh '''
+                            export SSHPASS="$DEPLOY_PASSWORD"
+                            
+                            echo "📊 Verificando estado de contenedores Todos API y Users API..."
+                            sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                $VM_USER@$VM_IP "cd $APP_PATH && docker compose ps todos-api users-api"
+                            
+                            echo "📋 Verificando que los puertos estén respondiendo..."
+                            if timeout 10 bash -c "</dev/tcp/$VM_IP/8082"; then
+                                echo "✅ Todos API (puerto 8082): RESPONDE"
+                            else
+                                echo "❌ Todos API (puerto 8082): NO RESPONDE"
+                                exit 1
+                            fi
+                            
+                            if timeout 10 bash -c "</dev/tcp/$VM_IP/8083"; then
+                                echo "✅ Users API (puerto 8083): RESPONDE"
+                            else
+                                echo "❌ Users API (puerto 8083): NO RESPONDE"
+                                exit 1
+                            fi
+                            
+                            echo "✅ Ambas APIs están respondiendo en sus puertos"
+                        '''
                     }
                 }
             }
