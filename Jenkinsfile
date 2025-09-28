@@ -284,18 +284,18 @@ pipeline {
                     steps {
                         script {
                             try {
-                                // Copiar archivo de testing y activar WireMock
+                                // Copiar archivo de retry y activar WireMock específico para retry
                                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                                     sh '''
                                         export SSHPASS="$DEPLOY_PASSWORD"
-                                        echo "📂 Copiando configuración de testing a la VM..."
+                                        echo "📂 Copiando configuración de retry testing a la VM..."
                                         sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                                            docker-compose.testing.yml $VM_USER@$VM_IP:$APP_PATH/
+                                            docker-compose.retry.yml $VM_USER@$VM_IP:$APP_PATH/
                                         
-                                        echo "🔧 Activando modo testing para retry pattern..."
+                                        echo "🔧 Activando modo retry testing..."
                                         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                             $VM_USER@$VM_IP "cd $APP_PATH && \
-                                            docker compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
+                                            docker compose -f docker-compose.yml -f docker-compose.retry.yml up -d --build && \
                                             sleep 15 && \
                                             echo '✅ WireMock disponible para retry tests'"
                                     '''
@@ -318,14 +318,14 @@ pipeline {
                                 // Marcar como unstable pero no fallar el pipeline
                                 currentBuild.result = 'UNSTABLE'
                             } finally {
-                                // Limpiar servicios de testing y volver a producción
+                                // Limpiar servicios de retry testing y volver a producción
                                 withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                                     sh '''
                                         export SSHPASS="$DEPLOY_PASSWORD"
-                                        echo "🧹 Limpiando servicios de testing..."
+                                        echo "🧹 Limpiando servicios de retry testing..."
                                         sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                                             $VM_USER@$VM_IP "cd $APP_PATH && \
-                                            docker compose -f docker-compose.yml -f docker-compose.testing.yml down && \
+                                            docker compose -f docker-compose.yml -f docker-compose.retry.yml down && \
                                             docker compose -f docker-compose.yml up -d && \
                                             echo '✅ Vuelto a modo producción'"
                                     '''
@@ -396,25 +396,23 @@ pipeline {
             }
             steps {
                 script {
-                    try {
-                        // Copiar archivo de testing y activar WireMock temporalmente
-                        withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
-                            sh '''
-                                export SSHPASS="$DEPLOY_PASSWORD"
-                                echo "📂 Copiando configuración de testing a la VM..."
-                                sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                                    docker-compose.testing.yml $VM_USER@$VM_IP:$APP_PATH/
-                                
-                                echo "🔧 Activando modo testing..."
-                                sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                                    $VM_USER@$VM_IP "cd $APP_PATH && \
-                                    docker compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
-                                    sleep 15 && \
-                                    echo '✅ Servicios de testing activos'"
-                            '''
-                        }
-                        
-                        withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
+                        try {
+                            // Activar WireMock para tests de cache usando docker-compose.testing.yml
+                            withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
+                                sh '''
+                                    export SSHPASS="$DEPLOY_PASSWORD"
+                                    echo "📂 Copiando configuración de testing a la VM..."
+                                    sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                        docker-compose.testing.yml $VM_USER@$VM_IP:$APP_PATH/
+                                    
+                                    echo "🔧 Activando modo testing para cache tests..."
+                                    sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                                        $VM_USER@$VM_IP "cd $APP_PATH && \
+                                        docker compose -f docker-compose.yml -f docker-compose.testing.yml up -d --build && \
+                                        sleep 15 && \
+                                        echo '✅ Servicios de testing activos para cache tests'"
+                                '''
+                            }                        withCredentials([string(credentialsId: 'deploy-password', variable: 'DEPLOY_PASSWORD')]) {
                             sh '''
                                 echo "Ejecutando test de cache pattern..."
                                 chmod +x ./scripts/jenkins-cache-test.sh

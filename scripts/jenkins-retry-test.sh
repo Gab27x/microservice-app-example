@@ -15,11 +15,11 @@ say "🔄 Iniciando test de retry pattern en VM: $VM_IP"
 # Ejecutar el test en la VM remota
 export SSHPASS="$DEPLOY_PASSWORD"
 
-# Copiar el script de test original a la VM
-say "📂 Copiando script de test a la VM..."
+# Copiar el script de test remoto a la VM
+say "📂 Copiando script de test remoto a la VM..."
 
 sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    ./scripts/test-retry.sh $VM_USER@$VM_IP:/tmp/test-retry.sh
+    ./scripts/test-retry-remote.sh $VM_USER@$VM_IP:/tmp/test-retry-remote.sh
 
 # Ejecutar el test en la VM
 say "🧪 Ejecutando test de retry en la VM..."
@@ -27,8 +27,9 @@ say "🧪 Ejecutando test de retry en la VM..."
 retry_output=$(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     $VM_USER@$VM_IP "
         cd $APP_PATH
-        chmod +x /tmp/test-retry.sh
-        /tmp/test-retry.sh 2>&1
+        export VM_IP='$VM_IP'
+        chmod +x /tmp/test-retry-remote.sh
+        /tmp/test-retry-remote.sh 2>&1
     " || echo "TEST_FAILED")
 
 if echo "$retry_output" | grep -q "TEST_FAILED"; then
