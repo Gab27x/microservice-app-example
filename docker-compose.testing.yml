@@ -1,6 +1,5 @@
 # Docker Compose para entorno de testing
 # Incluye servicios adicionales solo para tests
-version: '3.8'
 
 services:
   # Servicio WireMock para tests
@@ -32,4 +31,4 @@ services:
 
 networks:
   app-network:
-    external: true
+    driver: bridge
