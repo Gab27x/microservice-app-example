@@ -94,31 +94,50 @@ fi
 # Test funcional: verificar cache en acción
 say "🧪 Probando funcionalidad de cache con requests reales..."
 
-# Función para obtener token más robusta
+# Función para obtener token con mejor debugging
 get_auth_token() {
     local endpoint="$1"
-    curl -s --max-time 10 -X POST "$endpoint" \
+    local response=$(curl -s --max-time 10 -X POST "$endpoint" \
         -H "Content-Type: application/json" \
-        -d '{"username":"admin","password":"admin"}' 2>/dev/null | \
-        sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p' | head -1
+        -d '{"username":"admin","password":"admin"}' 2>/dev/null)
+    
+    say "🔍 Respuesta de $endpoint: ${response:0:100}..."
+    
+    echo "$response" | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p' | head -1
 }
 
 # Intentar múltiples endpoints para obtener token
 say "🔑 Intentando obtener token de autenticación..."
 TOKEN=""
 
+# Verificar que los servicios estén disponibles primero
+say "🔍 Verificando disponibilidad de servicios de auth..."
+auth_status=$(curl -s --max-time 5 "http://$VM_IP:8000/version" 2>/dev/null || echo "unavailable")
+frontend_status=$(curl -s --max-time 5 "http://$VM_IP:3000" 2>/dev/null || echo "unavailable")
+
+say "📊 Auth API status: $auth_status"
+say "📊 Frontend status: ${frontend_status:0:50}..."
+
 # Primero intentar Auth API directa (puerto 8000)
-TOKEN=$(get_auth_token "http://$VM_IP:8000/login")
-if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
-    say "✅ Token obtenido desde Auth API (puerto 8000)"
+if echo "$auth_status" | grep -q "Auth-API"; then
+    TOKEN=$(get_auth_token "http://$VM_IP:8000/login")
+    if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
+        say "✅ Token obtenido desde Auth API (puerto 8000): ${TOKEN:0:20}..."
+    else
+        say "⚠️  Auth API disponible pero fallo en login"
+    fi
 else
-    say "⚠️  Fallo en Auth API, probando Frontend..."
-    # Intentar Frontend (puerto 3000)
+    say "⚠️  Auth API no disponible, probando Frontend..."
+fi
+
+# Si no funciona, intentar Frontend (puerto 3000)
+if [ -z "$TOKEN" ]; then
     TOKEN=$(get_auth_token "http://$VM_IP:3000/login")
     if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
-        say "✅ Token obtenido desde Frontend (puerto 3000)"
+        say "✅ Token obtenido desde Frontend (puerto 3000): ${TOKEN:0:20}..."
     else
         say "❌ No se pudo obtener token de ningún endpoint"
+        say "🔍 Intentar login manual: curl -X POST http://$VM_IP:8000/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin\"}'"
     fi
 fi
 

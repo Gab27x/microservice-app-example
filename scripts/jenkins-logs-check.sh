@@ -102,7 +102,7 @@ if [ "$zipkin_status" = "200" ] || [ "$zipkin_status" = "302" ]; then
     fi
 else
     say "❌ Zipkin no está accesible (HTTP $zipkin_status)"
-    echo "FAIL: Zipkin not accessible (HTTP $zipkin_status)" > test-results/zipkin-traces.log
+    echo "ERROR: Zipkin not accessible (HTTP $zipkin_status)" > test-results/zipkin-traces.log
 fi
 
 # 5. Verificar métricas de uso de recursos

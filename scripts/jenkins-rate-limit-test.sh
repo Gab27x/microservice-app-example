@@ -98,18 +98,27 @@ if [ -n "$TOKEN" ]; then
         sleep 0.1
     done
 
-    # Limpiar y contar códigos de respuesta (eliminar duplicados y arreglar parsing)
-    clean_codes=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -E '^[0-9]{3}$' | sort | uniq -c)
+    # Debug: mostrar códigos obtenidos
+    say "🔍 Códigos HTTP obtenidos: $rate_test_codes"
     
-    # Contar códigos específicos de forma segura
-    count_200=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "^200$" 2>/dev/null || echo "0")
-    count_429=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "^429$" 2>/dev/null || echo "0")
-    count_other=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -v -E "^(200|429)$" | grep -E '^[0-9]{3}$' | wc -l 2>/dev/null || echo "0")
+    # Contar códigos específicos de forma más directa
+    count_200=0
+    count_429=0
+    count_other=0
     
-    # Sanitizar variables para evitar errores de integer expression
-    count_200=$(echo "$count_200" | tr -d '\n\r ' | head -1)
-    count_429=$(echo "$count_429" | tr -d '\n\r ' | head -1)
-    count_other=$(echo "$count_other" | tr -d '\n\r ' | head -1)
+    # Procesar cada código individualmente
+    for code in $rate_test_codes; do
+        case "$code" in
+            200) count_200=$((count_200 + 1)) ;;
+            429) count_429=$((count_429 + 1)) ;;
+            [0-9][0-9][0-9]) count_other=$((count_other + 1)) ;;
+        esac
+    done
+    
+    # Asegurar que las variables no estén vacías
+    count_200=${count_200:-0}
+    count_429=${count_429:-0}
+    count_other=${count_other:-0}
     
     say "📊 Resultados manual: ${count_200:-0} respuestas 200, ${count_429:-0} respuestas 429, ${count_other:-0} otras respuestas"
     
