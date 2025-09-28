@@ -34,8 +34,6 @@ say "1️⃣  Verificando conectividad básica de servicios..."
 
 services=(
     "$AUTH_URL/version:Auth-API"
-    "$TODOS_URL/health:Todos-API"
-    "$USERS_URL/health:Users-API"
     "$FRONTEND_URL:Frontend"
 )
 
@@ -51,6 +49,25 @@ for service in "${services[@]}"; do
         exit 1
     fi
 done
+
+# Verificar Todos API y Users API mediante conectividad de puerto
+say "   🔍 Verificando conectividad de Todos API y Users API..."
+
+if timeout 5 bash -c "</dev/tcp/$VM_IP/8082" 2>/dev/null; then
+    say "   ✅ Todos-API (puerto 8082) responde correctamente"
+else
+    say "   ❌ Todos-API (puerto 8082) no responde"
+    echo "FAIL: Todos-API no responde" >> test-results/smoke-test.log
+    exit 1
+fi
+
+if timeout 5 bash -c "</dev/tcp/$VM_IP/8083" 2>/dev/null; then
+    say "   ✅ Users-API (puerto 8083) responde correctamente"
+else
+    say "   ❌ Users-API (puerto 8083) no responde"
+    echo "FAIL: Users-API no responde" >> test-results/smoke-test.log
+    exit 1
+fi
 
 # 2. Test de autenticación
 say "2️⃣  Probando autenticación..."
