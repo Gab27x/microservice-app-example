@@ -9,7 +9,7 @@ pipeline {
     
     triggers {
         // Trigger automático cuando el job de infraestructura termine exitosamente
-        upstream(upstreamProjects: 'infraestructura-microservices', threshold: hudson.model.Result.SUCCESS)
+        upstream(upstreamProjects: 'infra-microservice-app-example/infra/main', threshold: hudson.model.Result.SUCCESS)
     }
     
     parameters {
@@ -31,7 +31,7 @@ pipeline {
         APP_PATH = "/opt/microservice-app"
         
         // IP por defecto (opcional, ajusta según tu infraestructura)
-        DEFAULT_VM_IP = "" // Puedes poner una IP fija aquí si siempre es la misma
+        DEFAULT_VM_IP = "127.0.0.1" // Cambia por la IP real de tu VM o déjalo vacío
         
         // Timeouts y configuración
         HEALTH_CHECK_TIMEOUT = "60"
@@ -82,17 +82,18 @@ pipeline {
                         try {
                             echo "Intentando obtener IP desde job de infraestructura..."
                             def upstreamBuild = build(
-                                job: 'infraestructura-microservices',
+                                job: 'infra-microservice-app-example/infra%2Fmain',
                                 wait: false,
                                 propagate: false
                             )
                             
                             if (upstreamBuild && upstreamBuild.result == 'SUCCESS') {
                                 // Intentar leer desde workspace si existe
-                                def propsFile = "${env.WORKSPACE}/../infraestructura-microservices/droplet.properties"
+                                def propsFile = "${env.WORKSPACE}/../infra-microservice-app-example_infra_main/droplet.properties"
                                 if (fileExists(propsFile)) {
                                     def props = readProperties file: propsFile
                                     env.VM_IP = props.DROPLET_IP ?: props.VM_IP
+                                    echo "IP obtenida desde job upstream: ${env.VM_IP}"
                                 }
                             }
                         } catch (Exception e) {
@@ -101,13 +102,30 @@ pipeline {
                     }
                     
                     // Validar que tenemos una IP
-                    if (!env.VM_IP) {
+                    if (!env.VM_IP || env.VM_IP == "127.0.0.1") {
                         echo "⚠️  No se pudo obtener la IP de la VM automáticamente"
-                        echo "💡 Opciones para configurar la IP:"
-                        echo "   1. Añadir parámetro 'VM_IP' al job"
-                        echo "   2. Configurar DEFAULT_VM_IP en environment"
-                        echo "   3. Instalar Copy Artifacts plugin"
-                        error "VM_IP requerida. Ver opciones de configuración arriba."
+                        echo "💡 Para configurar la IP de tu VM:"
+                        echo ""
+                        echo "   OPCIÓN 1 - Ejecutar manualmente con parámetro:"
+                        echo "   • Ve a 'Build with Parameters'"
+                        echo "   • Introduce la IP real en el campo 'VM_IP'"
+                        echo "   • Ejemplo: 167.172.XXX.XXX"
+                        echo ""
+                        echo "   OPCIÓN 2 - Configurar IP por defecto:"
+                        echo "   • Edita línea 27 del Jenkinsfile"
+                        echo "   • DEFAULT_VM_IP = \"TU_IP_REAL\""
+                        echo ""
+                        echo "   OPCIÓN 3 - Usar job de infraestructura:"
+                        echo "   • Verificar que 'infra-microservice-app-example/infra/main' existe"
+                        echo "   • Verificar que genera droplet.properties con DROPLET_IP"
+                        echo ""
+                        
+                        if (env.VM_IP == "127.0.0.1") {
+                            echo "🚨 Usando IP de localhost (127.0.0.1) - esto es solo para testing local"
+                            echo "   Para testing real, configura la IP de tu VM en DigitalOcean"
+                        } else {
+                            error "VM_IP requerida. Configura la IP de tu VM usando las opciones de arriba."
+                        }
                     }
                     
                     echo "✅ VM IP configurada: ${env.VM_IP}"
