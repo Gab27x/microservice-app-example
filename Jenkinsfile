@@ -52,11 +52,11 @@ pipeline {
             steps {
                 script {
                     // Obtener la IP de la VM desde el artefacto del job de infraestructura
-                    copyArtifacts(
-                        projectName: 'infraestructura-microservices', // Ajusta el nombre del job de infra
-                        selector: lastSuccessful(),
-                        filter: 'droplet.properties'
-                    )
+                    step([$class: 'CopyArtifact',
+                          projectName: 'infraestructura-microservices', // Ajusta el nombre del job de infra
+                          selector: [$class: 'LastSuccessfulBuildSelector'],
+                          filter: 'droplet.properties'
+                    ])
                     
                     // Leer la IP del archivo
                     def props = readProperties file: 'droplet.properties'
