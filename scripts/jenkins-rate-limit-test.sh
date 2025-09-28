@@ -82,27 +82,49 @@ if [ -n "$TOKEN" ]; then
     say "🔑 Token obtenido, probando ráfaga de solicitudes..."
     
     # Hacer 10 solicitudes rápidas al endpoint /todos
+    # Inicializar contadores
+    count_200=0
+    count_429=0
+
+    # Hacer 10 solicitudes rápidas al endpoint real de todos-api
     rate_test_codes=""
+    say "🚀 Enviando 10 solicitudes rápidas para probar rate limiting..."
     for i in {1..10}; do
         code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $TOKEN" \
-            "http://$VM_IP:3000/todos" 2>/dev/null || echo "000")
+            "http://$VM_IP:8082/todos" 2>/dev/null || echo "000")
         rate_test_codes="$rate_test_codes $code"
+        # Pequeña pausa para no saturar completamente
+        sleep 0.1
     done
+
+    # Limpiar y contar códigos de respuesta (eliminar duplicados y arreglar parsing)
+    clean_codes=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -E '^[0-9]{3}$' | sort | uniq -c)
     
-    # Contar códigos de respuesta
-    count_200=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "200" || echo "0")
-    count_429=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "429" || echo "0")
+    # Contar códigos específicos de forma segura
+    count_200=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "^200$" 2>/dev/null || echo "0")
+    count_429=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -c "^429$" 2>/dev/null || echo "0")
+    count_other=$(echo "$rate_test_codes" | tr ' ' '\n' | grep -v -E "^(200|429)$" | grep -E '^[0-9]{3}$' | wc -l 2>/dev/null || echo "0")
     
-    say "📊 Resultados manual: $count_200 respuestas 200, $count_429 respuestas 429"
+    # Sanitizar variables para evitar errores de integer expression
+    count_200=$(echo "$count_200" | tr -d '\n\r ' | head -1)
+    count_429=$(echo "$count_429" | tr -d '\n\r ' | head -1)
+    count_other=$(echo "$count_other" | tr -d '\n\r ' | head -1)
     
-    echo "Manual test - 200: $count_200, 429: $count_429" > test-results/rate-limit-manual.log
+    say "📊 Resultados manual: ${count_200:-0} respuestas 200, ${count_429:-0} respuestas 429, ${count_other:-0} otras respuestas"
+    
+    echo "Manual test - 200: ${count_200:-0}, 429: ${count_429:-0}, other: ${count_other:-0}" > test-results/rate-limit-manual.log
     echo "Response codes: $rate_test_codes" >> test-results/rate-limit-manual.log
+    echo "Total requests: 10" >> test-results/rate-limit-manual.log
     
-    if [ "$count_429" -gt 0 ]; then
-        say "✅ Rate limiting verificado manualmente - se detectaron respuestas 429"
+    # Evaluar resultado con variables seguras
+    if [ "${count_429:-0}" -gt 0 ] 2>/dev/null; then
+        say "✅ Rate limiting verificado manualmente - se detectaron ${count_429:-0} respuestas 429"
+    elif [ "${count_200:-0}" -gt 7 ] 2>/dev/null; then
+        say "⚠️  Rate limiting puede no estar activo - demasiadas respuestas 200 (${count_200:-0}/10)"
     else
-        say "⚠️  No se detectaron respuestas 429 en test manual"
+        say "⚠️  Resultados de rate limiting unclear - verificar configuración"
+        say "🔍 Codes obtenidos: $rate_test_codes"
     fi
 else
     say "⚠️  No se pudo obtener token para test manual"

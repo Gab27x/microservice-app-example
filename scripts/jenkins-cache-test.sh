@@ -94,47 +94,67 @@ fi
 # Test funcional: verificar cache en acción
 say "🧪 Probando funcionalidad de cache con requests reales..."
 
-# Obtener token
-TOKEN=$(curl -s --max-time 10 -X POST "http://$VM_IP:8000/login" \
-    -H "Content-Type: application/json" \
-    -d '{"username":"admin","password":"admin"}' | \
-    grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4 2>/dev/null || echo "")
+# Función para obtener token más robusta
+get_auth_token() {
+    local endpoint="$1"
+    curl -s --max-time 10 -X POST "$endpoint" \
+        -H "Content-Type: application/json" \
+        -d '{"username":"admin","password":"admin"}' 2>/dev/null | \
+        sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p' | head -1
+}
+
+# Intentar múltiples endpoints para obtener token
+say "🔑 Intentando obtener token de autenticación..."
+TOKEN=""
+
+# Primero intentar Auth API directa (puerto 8000)
+TOKEN=$(get_auth_token "http://$VM_IP:8000/login")
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
+    say "✅ Token obtenido desde Auth API (puerto 8000)"
+else
+    say "⚠️  Fallo en Auth API, probando Frontend..."
+    # Intentar Frontend (puerto 3000)
+    TOKEN=$(get_auth_token "http://$VM_IP:3000/login")
+    if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
+        say "✅ Token obtenido desde Frontend (puerto 3000)"
+    else
+        say "❌ No se pudo obtener token de ningún endpoint"
+    fi
+fi
 
 if [ -n "$TOKEN" ]; then
-    # Hacer varias solicitudes para probar cache
     say "🔑 Token obtenido: ${TOKEN:0:20}..., probando comportamiento de cache..."
-    
+
     # Primera solicitud (debería llenar cache)
     start_time=$(date +%s%N)
     response1=$(curl -s --max-time 10 -H "Authorization: Bearer $TOKEN" \
         "http://$VM_IP:8082/todos" 2>/dev/null || echo "[]")
     end_time=$(date +%s%N)
-    time1=$((($end_time - $start_time) / 1000000)) # Convert to milliseconds
-    
-    # Pequeña pausa
+    time1=$((($end_time - $start_time) / 1000000))
+
     sleep 1
-    
-    # Segunda solicitud (debería usar cache, ser más rápida)
+
+    # Segunda solicitud (debería usar cache)
     start_time=$(date +%s%N)
     response2=$(curl -s --max-time 10 -H "Authorization: Bearer $TOKEN" \
         "http://$VM_IP:8082/todos" 2>/dev/null || echo "[]")
     end_time=$(date +%s%N)
-    time2=$((($end_time - $start_time) / 1000000)) # Convert to milliseconds
-    
+    time2=$((($end_time - $start_time) / 1000000))
+
     say "📊 Tiempo primera solicitud: ${time1}ms"
     say "📊 Tiempo segunda solicitud: ${time2}ms"
-    
+
     echo "First request time: ${time1}ms" > test-results/cache-performance.log
     echo "Second request time: ${time2}ms" >> test-results/cache-performance.log
     echo "Response match: $([ "$response1" = "$response2" ] && echo "YES" || echo "NO")" >> test-results/cache-performance.log
-    
+
     if [ "$response1" = "$response2" ]; then
         say "✅ Respuestas consistentes (cache funcionando)"
     else
         say "⚠️  Respuestas inconsistentes"
     fi
 else
-    say "⚠️  No se pudo obtener token para test funcional"
+    say "⚠️  No se pudo obtener token para test funcional (falló en 8000 y 3000)"
 fi
 
 # Guardar output completo
