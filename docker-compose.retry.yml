@@ -1,0 +1,21 @@
+services:
+  wiremock:
+    image: wiremock/wiremock:2.35.0
+    container_name: wiremock
+    ports:
+      - "8089:8080"
+    networks:
+      - app-network
+
+  auth-api:
+    depends_on:
+      - zipkin
+      - wiremock
+    environment:
+      USERS_API_ADDRESS: http://wiremock:8080
+
+networks:
+  app-network:
+    driver: bridge
+
+

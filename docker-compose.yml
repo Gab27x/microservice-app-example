@@ -1,0 +1,94 @@
+
+services:
+  redis-todo:
+    image: redis:6.2
+    container_name: redis-todo
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - app-network
+
+  users-api:
+    build:
+      context: ./users-api
+    container_name: users-api
+    ports:
+      - "8083:8083"
+    depends_on:
+      - zipkin
+    networks:
+      - app-network
+
+  auth-api:
+    build:
+      context: ./auth-api
+    container_name: auth-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - users-api
+      - zipkin
+    networks:
+      - app-network
+
+  todos-api:
+    build:
+      context: ./todos-api
+    container_name: todos-api
+    ports:
+      - "8082:8082"
+    depends_on: 
+      - redis-todo
+      - zipkin
+    networks:
+      - app-network
+    environment:
+      - REDIS_HOST=redis-todo
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - CACHE_TTL_SECONDS=60
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - RATE_LIMIT_POINTS=100
+      - RATE_LIMIT_DURATION=60
+      - RATE_LIMIT_BLOCK=60
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"  
+    depends_on:
+      - auth-api
+      - todos-api
+      - zipkin
+    networks:
+      - app-network
+
+  log-message-processor:
+    build:
+      context: ./log-message-processor
+    container_name: log-message-processor
+    depends_on:
+      - redis-todo
+      - zipkin
+    environment:
+      - REDIS_HOST=redis-todo
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - PYTHONUNBUFFERED=1
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

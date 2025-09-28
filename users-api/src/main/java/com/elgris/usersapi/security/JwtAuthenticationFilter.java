@@ -26,6 +26,14 @@ public class JwtAuthenticationFilter extends GenericFilterBean {
 
         final HttpServletRequest request = (HttpServletRequest) req;
         final HttpServletResponse response = (HttpServletResponse) res;
+        final String requestPath = request.getRequestURI();
+
+        // Skip JWT validation for health endpoint
+        if ("/health".equals(requestPath)) {
+            chain.doFilter(req, res);
+            return;
+        }
+
         final String authHeader = request.getHeader("authorization");
 
         if ("OPTIONS".equals(request.getMethod())) {

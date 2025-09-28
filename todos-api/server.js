@@ -30,7 +30,7 @@ const redisClient = require("redis").createClient({
   }        
 });
 const port = process.env.TODO_API_PORT || 8082
-const jwtSecret = process.env.JWT_SECRET || "foo"
+const jwtSecret = process.env.JWT_SECRET || "myfancysecret"
 
 const app = express()
 
@@ -45,16 +45,50 @@ const recorder = new  BatchRecorder({
 const localServiceName = 'todos-api';
 const tracer = new Tracer({ctxImpl, recorder, localServiceName});
 
+// Body parser middleware (necesario para todos los endpoints)
+app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.json())
 
-app.use(jwt({ secret: jwtSecret }))
+// Health check endpoint (sin autenticación, rate limiting ni JWT)
+app.get('/health', function(req, res) {
+  res.status(200).json({
+    status: 'OK',
+    service: 'todos-api',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.use(jwt({ secret: jwtSecret, algorithms: ['HS256'] }).unless({path: ['/health']}))
 app.use(zipkinMiddleware({tracer}));
+// Rate limiting distribuido con Redis (por IP o usuario JWT)
+const { RateLimiterRedis } = require('rate-limiter-flexible');
+const rlPoints = parseInt(process.env.RATE_LIMIT_POINTS || '100', 10);
+const rlDuration = parseInt(process.env.RATE_LIMIT_DURATION || '60', 10);
+const rlBlock = parseInt(process.env.RATE_LIMIT_BLOCK || '60', 10);
+const rateLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rlflx',
+  points: rlPoints,
+  duration: rlDuration,
+  blockDuration: rlBlock
+});
+function rateLimitKey(req) {
+  if (req.user && req.user.sub) return 'user:' + req.user.sub;
+  return 'ip:' + (req.ip || req.connection.remoteAddress || 'unknown');
+}
+app.use(async function (req, res, next) {
+  try {
+    await rateLimiter.consume(rateLimitKey(req), 1);
+    next();
+  } catch (rejRes) {
+    res.status(429).json({ message: 'Too Many Requests' });
+  }
+});
 app.use(function (err, req, res, next) {
   if (err.name === 'UnauthorizedError') {
     res.status(401).send({ message: 'invalid token' })
   }
 })
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(bodyParser.json())
 
 const routes = require('./routes')
 routes(app, {tracer, redisClient, logChannel})
