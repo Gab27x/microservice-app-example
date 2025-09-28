@@ -10,9 +10,6 @@ pipeline {
     triggers {
         // Trigger automático cuando el job de infraestructura termine exitosamente
         upstream(upstreamProjects: 'infraestructura-microservices', threshold: hudson.model.Result.SUCCESS)
-        
-        // También monitorea cambios en SCM cada 10 minutos (solo para master/main)
-        scm('H/10 * * * *')
     }
     
     environment {
