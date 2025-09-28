@@ -58,6 +58,37 @@ func main() {
 		e.Logger.Infof("Zipkin URL was not provided, tracing is not initialised")
 	}
 
+    // Wrap HTTP client with circuit breaker to protect outbound calls to Users API
+    breakerClient := newBreakerHTTPClient(userService.Client, "users-api-breaker")
+    userService.Client = breakerClient
+
+    // Wrap with retry client (idempotent methods) after the circuit breaker
+    userService.Client = newRetryHTTPClient(userService.Client, RetryConfig{
+        MaxRetries: 3,
+        BaseDelay:  200 * time.Millisecond,
+        MaxDelay:   2 * time.Second,
+    })
+
+	// Expose breaker status for debugging and compatibility paths
+	breakerHandler := func(c echo.Context) error {
+		state, gbCounts := breakerClient.Status()
+		local := breakerClient.LocalCounts()
+		code := http.StatusOK
+		if state.String() == "open" { code = http.StatusServiceUnavailable }
+		return c.JSON(code, map[string]any{
+			"service":"auth-api",
+			"state": state.String(),
+			"counts": gbCounts,
+			"totals": local,                 // <- ESTO
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}
+
+
+	e.GET("/debug/breaker", breakerHandler)
+	e.GET("/status/circuit-breaker", breakerHandler)
+	e.GET("/health/circuit-breaker", breakerHandler)
+
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())

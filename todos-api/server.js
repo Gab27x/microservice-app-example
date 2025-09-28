@@ -30,7 +30,7 @@ const redisClient = require("redis").createClient({
   }        
 });
 const port = process.env.TODO_API_PORT || 8082
-const jwtSecret = process.env.JWT_SECRET || "foo"
+const jwtSecret = process.env.JWT_SECRET || "myfancysecret"
 
 const app = express()
 
@@ -48,6 +48,30 @@ const tracer = new Tracer({ctxImpl, recorder, localServiceName});
 
 app.use(jwt({ secret: jwtSecret }))
 app.use(zipkinMiddleware({tracer}));
+// Rate limiting distribuido con Redis (por IP o usuario JWT)
+const { RateLimiterRedis } = require('rate-limiter-flexible');
+const rlPoints = parseInt(process.env.RATE_LIMIT_POINTS || '100', 10);
+const rlDuration = parseInt(process.env.RATE_LIMIT_DURATION || '60', 10);
+const rlBlock = parseInt(process.env.RATE_LIMIT_BLOCK || '60', 10);
+const rateLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rlflx',
+  points: rlPoints,
+  duration: rlDuration,
+  blockDuration: rlBlock
+});
+function rateLimitKey(req) {
+  if (req.user && req.user.sub) return 'user:' + req.user.sub;
+  return 'ip:' + (req.ip || req.connection.remoteAddress || 'unknown');
+}
+app.use(async function (req, res, next) {
+  try {
+    await rateLimiter.consume(rateLimitKey(req), 1);
+    next();
+  } catch (rejRes) {
+    res.status(429).json({ message: 'Too Many Requests' });
+  }
+});
 app.use(function (err, req, res, next) {
   if (err.name === 'UnauthorizedError') {
     res.status(401).send({ message: 'invalid token' })
