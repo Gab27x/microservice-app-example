@@ -56,178 +56,47 @@ pipeline {
                 echo "📋 Pipeline de verificación iniciado para producción"
             }
         }
-        
+
         stage("Obtener IP de VM") {
-            when {
-                anyOf {
-                    branch 'master'
-                    branch 'main'
-                }
-            }
-            steps {
-                script {
-                    def ipObtained = false
-                    
-                    // Prioridad 1: IP desde parámetro manual
-                    if (params.VM_IP && params.VM_IP.trim() != '') {
-                        env.VM_IP = params.VM_IP.trim()
-                        echo "✅ VM IP obtenida desde parámetro: ${env.VM_IP}"
-                        ipObtained = true
-                    }
-                    
-                    // Prioridad 2: Obtener IP desde variables de entorno del job upstream
-                    if (!ipObtained) {
-                        try {
-                            echo "🔍 Intentando obtener IP desde variables de entorno del job upstream..."
-                            
-                            // Método 1: Copiar artefactos usando Jenkins API interna
-                            def upstreamJob = Jenkins.instance.getItem("infra-microservice-app-example").getItem("infra%2Fmain")
-                            def lastBuild = upstreamJob?.getLastSuccessfulBuild()
-                            
-                            if (lastBuild) {
-                                echo "� Build encontrado: ${lastBuild.number}"
-                                
-                                // Intentar leer variables de entorno del build upstream
-                                def envVars = lastBuild.getEnvironment()
-                                if (envVars.containsKey('DROPLET_IP')) {
-                                    env.VM_IP = envVars.get('DROPLET_IP')
-                                    echo "✅ IP obtenida desde variables de entorno upstream: ${env.VM_IP}"
-                                    ipObtained = true
-                                }
-                            }
-                        } catch (Exception e) {
-                            echo "⚠️  No se pudo acceder a variables de entorno upstream: ${e.message}"
-                        }
-                    }
-                    
-                    // Prioridad 3: Descargar artefactos usando curl
-                    if (!ipObtained) {
-                        try {
-                            echo "🔍 Intentando descargar artefactos del job de infraestructura..."
-                            
-                            // Descargar droplet.properties
-                            def jobUrl = "${env.JENKINS_URL}job/infra-microservice-app-example/job/infra%252Fmain/lastSuccessfulBuild/artifact/droplet.properties"
-                            echo "📥 Descargando droplet.properties desde: ${jobUrl}"
-                            
-                            def curlResult = sh(
-                                script: "curl -s -f --connect-timeout 10 '${jobUrl}' || echo 'CURL_FAILED'",
-                                returnStdout: true
-                            ).trim()
-                            
-                            if (curlResult != 'CURL_FAILED' && curlResult != '') {
-                                echo "✅ droplet.properties descargado exitosamente"
-                                echo "📄 Contenido:\n${curlResult}"
-                                
-                                // Extraer DROPLET_IP
-                                def lines = curlResult.split('\n')
-                                for (line in lines) {
-                                    if (line.startsWith('DROPLET_IP=')) {
-                                        env.VM_IP = line.split('=')[1].trim()
-                                        echo "✅ IP extraída de droplet.properties: ${env.VM_IP}"
-                                        ipObtained = true
-                                        break
-                                    }
-                                }
-                            }
-                            
-                            // Si no funciona droplet.properties, intentar jenkins-env.properties
-                            if (!ipObtained) {
-                                echo "🔄 Intentando jenkins-env.properties..."
-                                def envJobUrl = "${env.JENKINS_URL}job/infra-microservice-app-example/job/infra%252Fmain/lastSuccessfulBuild/artifact/jenkins-env.properties"
-                                
-                                def envCurlResult = sh(
-                                    script: "curl -s -f --connect-timeout 10 '${envJobUrl}' || echo 'CURL_FAILED'",
-                                    returnStdout: true
-                                ).trim()
-                                
-                                if (envCurlResult != 'CURL_FAILED' && envCurlResult != '') {
-                                    echo "✅ jenkins-env.properties descargado exitosamente"
-                                    echo "📄 Contenido:\n${envCurlResult}"
-                                    
-                                    def envLines = envCurlResult.split('\n')
-                                    for (line in envLines) {
-                                        if (line.startsWith('DROPLET_IP=') || line.startsWith('VM_IP_ADDRESS=')) {
-                                            env.VM_IP = line.split('=')[1].trim()
-                                            echo "✅ IP extraída de jenkins-env.properties: ${env.VM_IP}"
-                                            ipObtained = true
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                            
-                        } catch (Exception e) {
-                            echo "❌ Error descargando artefactos: ${e.message}"
-                        }
-                    }
-                    
-                    // Prioridad 4: Usar build step para disparar job y obtener variables
-                    if (!ipObtained) {
-                        try {
-                            echo "🔄 Intentando obtener IP via build step..."
-                            def upstreamBuild = build(
-                                job: 'infra-microservice-app-example/infra%2Fmain',
-                                wait: false,
-                                propagate: false
-                            )
-                            echo "⚠️  Build step ejecutado, pero no se puede obtener variables dinámicamente"
-                        } catch (Exception e) {
-                            echo "❌ Error con build step: ${e.message}"
-                        }
-                    }
-                    
-                    // Validación final
-                    if (!ipObtained || !env.VM_IP || env.VM_IP.trim() == '') {
-                        echo "❌ No se pudo obtener la IP de la VM automáticamente"
-                        echo ""
-                        echo "💡 SOLUCIONES DISPONIBLES:"
-                        echo ""
-                        echo "   🎯 OPCIÓN 1 - Ejecutar con parámetro (MÁS FÁCIL):"
-                        echo "   • Ve a 'Build with Parameters'"
-                        echo "   • En campo 'VM_IP' introduce la IP actual de tu VM"
-                        echo "   • Ejemplo: 167.172.123.456"
-                        echo ""
-                        echo "   🔧 OPCIÓN 2 - Verificar job de infraestructura:"
-                        echo "   • Ejecutar job 'infra-microservice-app-example/infra/main'"
-                        echo "   • Verificar que termine exitosamente"
-                        echo "   • Verificar artefactos: droplet.properties y jenkins-env.properties"
-                        echo ""
-                        echo "   📋 OPCIÓN 3 - Instalar plugins Jenkins:"
-                        echo "   • Copy Artifacts Plugin"
-                        echo "   • EnvInject Plugin"
-                        echo ""
-                        
-                        // Mostrar información de debug
-                        echo "🔍 DEBUG INFO:"
-                        echo "   Jenkins URL: ${env.JENKINS_URL}"
-                        echo "   Job esperado: infra-microservice-app-example/infra/main"
-                        echo "   Parámetro VM_IP: '${params.VM_IP}'"
-                        
-                        error "❌ VM_IP requerida para continuar. Usa 'Build with Parameters' y especifica la IP manualmente."
-                    }
-                    
-                    // Validar formato de IP
-                    if (!env.VM_IP.matches(/\d+\.\d+\.\d+\.\d+/)) {
-                        echo "⚠️  IP no tiene formato estándar: ${env.VM_IP}"
-                        echo "   Continuando de todas formas..."
-                    }
-                    
-                    echo "✅ VM IP configurada: ${env.VM_IP}"
-                    
-                    // Configurar URLs de prueba
-                    env.FRONTEND_URL = "http://${env.VM_IP}:${env.FRONTEND_PORT}"
-                    env.AUTH_API_URL = "http://${env.VM_IP}:${env.AUTH_API_PORT}"
-                    env.TODOS_API_URL = "http://${env.VM_IP}:${env.TODOS_API_PORT}"
-                    env.ZIPKIN_URL = "http://${env.VM_IP}:${env.ZIPKIN_PORT}"
-                    
-                    echo "🌐 URLs configuradas:"
-                    echo "   Frontend: ${env.FRONTEND_URL}"
-                    echo "   Auth API: ${env.AUTH_API_URL}"
-                    echo "   Todos API: ${env.TODOS_API_URL}"
-                    echo "   Zipkin: ${env.ZIPKIN_URL}"
-                }
+        when {
+            anyOf {
+                branch 'master'
+                branch 'main'
             }
         }
+        steps {
+            script {
+                echo "📥 Copiando droplet.properties del job de infraestructura..."
+                copyArtifacts(
+                    projectName: 'infra-microservice-app-example/infra/main',
+                    selector: lastSuccessful(),
+                    filter: 'droplet.properties',
+                    fingerprintArtifacts: true
+                )
+
+                def ipValue = sh(script: 'grep "^DROPLET_IP=" droplet.properties | cut -d= -f2', returnStdout: true).trim()
+                if (!ipValue) {
+                    error("❌ No se pudo obtener DROPLET_IP desde droplet.properties")
+                }
+
+                env.VM_IP = ipValue
+                echo "✅ VM IP obtenida vía Copy Artifact: ${env.VM_IP}"
+
+                // Configurar URLs de prueba
+                env.FRONTEND_URL = "http://${env.VM_IP}:${env.FRONTEND_PORT}"
+                env.AUTH_API_URL = "http://${env.VM_IP}:${env.AUTH_API_PORT}"
+                env.TODOS_API_URL = "http://${env.VM_IP}:${env.TODOS_API_PORT}"
+                env.ZIPKIN_URL   = "http://${env.VM_IP}:${env.ZIPKIN_PORT}"
+
+                echo "🌐 URLs configuradas:"
+                echo "   Frontend: ${env.FRONTEND_URL}"
+                echo "   Auth API: ${env.AUTH_API_URL}"
+                echo "   Todos API: ${env.TODOS_API_URL}"
+                echo "   Zipkin: ${env.ZIPKIN_URL}"
+            }
+        }
+    }
+
         
         stage("Verificar Conectividad VM") {
             when {
