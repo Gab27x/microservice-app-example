@@ -20,12 +20,24 @@ Este proyecto - **Scope**: Análisis completo del filesystem del proyecto
 - **Security Scans**: Secrets, vulnerabilities, Dockerfile quality
 - **Feature Quality**: Tests de patrones en desarrollo
 
+![alt text](image.png)
+
+Link de los github actions logs CI & Build: https://github.com/Gab27x/microservice-app-example/actions/runs/18048977132
+
+
 ### **Jenkins (Production Simulation):**
 - **Production Readiness**: SUCCESS (100%) achieved
 - **Real Environment**: Response times en VM productiva
 - **Advanced Patterns**: Retry, Circuit Breaker en ambiente real
 - **Pre-Production Report**: Estado final antes de deploy real
 - **Deployment Confidence**: Validación en infraestructura real
+
+<img width="1344" height="430" alt="Captura de pantalla 2025-09-29 084239" src="https://github.com/user-attachments/assets/c5c66649-08bf-42ae-9701-78ec25edc908" />
+
+### Reporte final de jenkins - microservice desarrollo:
+
+<img width="692" height="478" alt="image" src="https://github.com/user-attachments/assets/e3bf1e0d-575e-428b-8b6c-fbdb727660b0" />
+
 
 ### **Separación de Responsabilidades:**
 - **GitHub Actions**: Validación rápida de features durante desarrollo
@@ -40,8 +52,6 @@ Este proyecto - **Scope**: Análisis completo del filesystem del proyecto
 
 ## GitHub Actions Workflows
 **Enfoque: Desarrollo y Creación de Features**
-
-![alt text](image.png)
 
 ### 1. **CI & Build** (`ci-integrations.yml`)
 **Pipeline para desarrollo de features y integración continua**
