@@ -34,7 +34,7 @@ Link de los github actions logs CI & Build: https://github.com/Gab27x/microservi
 
 <img width="1344" height="430" alt="Captura de pantalla 2025-09-29 084239" src="https://github.com/user-attachments/assets/c5c66649-08bf-42ae-9701-78ec25edc908" />
 
-### Reporte final de jenkins - microservice desarrollo:
+### Reporte Final de Jenkins Pipeline Desarrollo - Microservice
 
 <img width="692" height="478" alt="image" src="https://github.com/user-attachments/assets/e3bf1e0d-575e-428b-8b6c-fbdb727660b0" />
 
