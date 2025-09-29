@@ -30,7 +30,7 @@
 
 ### **Documentos Académicos**
 - **[Taller 1 - Enunciado](taller1-enunciado.md)** - Especificaciones del proyecto
-- **[Software 5 - Taller 1 PDF](software5%20taller%201.pdf)** - Documento académico
+- **[Software 5 - Taller 1 PDF](software5%20taller%201.pdf)** - Diagrama de arquitectura
 - **[VM Setup](vm-setup.md)** - Configuración de ambiente de producción
 
 ---
